@@ -8,3 +8,6 @@ httpx>=0.25.0
 
 # Data manipulation and analysis
 pandas>=2.0.0
+
+# WebSocket server for real-time broadcasting
+websockets>=12.0
