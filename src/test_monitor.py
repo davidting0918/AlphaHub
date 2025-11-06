@@ -45,15 +45,18 @@ async def main():
         # Sort by 24h volume to get most liquid tokens
         filtered_tokens = token_df.query("multiplier > 1 and volume_24h > 0")
         filtered_tokens = filtered_tokens.sort_values(by="volume_24h", ascending=False)
+    
         
-        # Select top N tokens
-        num_tokens = min(15, len(filtered_tokens))
-        selected_tokens = filtered_tokens.head(num_tokens)
-        
-        symbols = [f"{row['alpha_id']}USDT" for _, row in selected_tokens.iterrows()]
+        symbols = [
+            {
+                "symbol": row['symbol'],
+                "alpha_id": f"{row['alpha_id']}USDT"
+            }
+            for _, row in filtered_tokens.iterrows()
+        ]
         
         print(f"\n[{dt.now().strftime('%H:%M:%S')}] Selected {len(symbols)} tokens for monitoring:")
-        for i, (_, row) in enumerate(selected_tokens.iterrows(), 1):
+        for i, (_, row) in enumerate(filtered_tokens.iterrows(), 1):
             print(f"  {i:2d}. {row['alpha_id']:10s} - Volume: ${row['volume_24h']:,.0f}")
         
         # Step 3: Create monitor and run batch analysis
@@ -111,15 +114,6 @@ async def main():
                     if metric_name in metrics:
                         m = metrics[metric_name]
                         print(f"      - {metric_name}: {m['value']:.4%} (score: {m['score']:.1f})")
-        
-        # Step 5: Save full JSON output
-        output_file = "stability_monitor_results.json"
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(result_dict, f, indent=2, ensure_ascii=False)
-        
-        print("\n" + "=" * 70)
-        print(f"[FILE] Full results saved to: {output_file}")
-        print("=" * 70)
 
 
 if __name__ == "__main__":

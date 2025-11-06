@@ -35,6 +35,7 @@ class MetricResult:
 class StabilityResult:
     """Complete stability analysis result for a single symbol"""
     symbol: str
+    alpha_id: str
     timestamp: int
     signal: Signal
     composite_score: float
@@ -47,12 +48,14 @@ class StabilityResult:
         if self.error:
             return {
                 "symbol": self.symbol,
+                "alpha_id": self.alpha_id,
                 "timestamp": self.timestamp,
                 "error": self.error
             }
         
         return {
             "symbol": self.symbol,
+            "alpha_id": self.alpha_id,
             "timestamp": self.timestamp,
             "signal": self.signal.value,
             "composite_score": round(self.composite_score, 2),
@@ -99,8 +102,8 @@ METRIC_WEIGHTS = {
 
 # Recommendation Messages
 RECOMMENDATIONS = {
-    Signal.GREEN: "適合執行對沖交易 - 市場穩定性良好",
-    Signal.YELLOW: "謹慎執行交易 - 建議減少交易量或縮小價差",
-    Signal.RED: "不建議交易 - 市場波動過大或流動性異常"
+    Signal.GREEN: "can trade - market is stable",
+    Signal.YELLOW: "caution - market is unstable",
+    Signal.RED: "do not trade - market is volatile or illiquid"
 }
 

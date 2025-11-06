@@ -33,7 +33,7 @@ class StabilityMonitor:
         """
         self.alpha = async_binance_alpha
     
-    async def monitor_batch(self, symbols: List[str]) -> MonitorBatchResult:
+    async def monitor_batch(self, symbols: List[Dict[str, Any]]) -> MonitorBatchResult:
         """
         Monitor multiple symbols concurrently
         
@@ -51,9 +51,9 @@ class StabilityMonitor:
         # Fetch all market data concurrently
         try:
             klines_1m_batch, klines_15s_batch, agg_trades_batch = await asyncio.gather(
-                self.alpha.get_klines(symbols, "1m", 15),
-                self.alpha.get_klines(symbols, "15s", 20),
-                self.alpha.get_agg_trades(symbols, 500)
+                self.alpha.get_klines([i['alpha_id'] for i in symbols], "1m", 15),
+                self.alpha.get_klines([i['alpha_id'] for i in symbols], "15s", 20),
+                self.alpha.get_agg_trades([i['alpha_id'] for i in symbols], 500)
             )
         except Exception as e:
             logger.error(f"Failed to fetch market data: {str(e)}")
@@ -67,12 +67,13 @@ class StabilityMonitor:
         
         # Process each symbol
         results = []
-        for symbol in symbols:
+        for symbol_info in symbols:
             result = await self._analyze_symbol(
-                symbol,
-                klines_1m_batch.get(symbol),
-                klines_15s_batch.get(symbol),
-                agg_trades_batch.get(symbol)
+                symbol_info['symbol'],
+                symbol_info['alpha_id'],
+                klines_1m_batch[symbol_info['alpha_id']],
+                klines_15s_batch[symbol_info['alpha_id']],
+                agg_trades_batch[symbol_info['alpha_id']]
             )
             results.append(result)
         
@@ -101,6 +102,7 @@ class StabilityMonitor:
     async def _analyze_symbol(
         self,
         symbol: str,
+        alpha_id: str,
         klines_1m: List[Dict[str, Any]],
         klines_15s: List[Dict[str, Any]],
         agg_trades: List[Dict[str, Any]]
@@ -110,6 +112,7 @@ class StabilityMonitor:
         
         Args:
             symbol: Trading pair symbol
+            alpha_id: Alpha ID
             klines_1m: 1-minute klines data
             klines_15s: 15-second klines data
             agg_trades: Aggregated trades data
@@ -125,6 +128,7 @@ class StabilityMonitor:
             # Create indicator and analyze
             indicator = AlphaStabilityIndicator(
                 symbol=symbol,
+                alpha_id=alpha_id,
                 klines_1m=klines_1m,
                 klines_15s=klines_15s,
                 agg_trades=agg_trades
@@ -137,11 +141,12 @@ class StabilityMonitor:
             logger.error(f"Failed to analyze {symbol}: {str(e)}")
             return StabilityResult(
                 symbol=symbol,
+                alpha_id=alpha_id,
                 timestamp=int(time.time() * 1000),
                 signal=Signal.RED,
                 composite_score=0.0,
                 metrics={},
-                recommendation="數據不足或計算錯誤",
+                recommendation="data insufficient or calculation error",
                 error=str(e)
             )
 

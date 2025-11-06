@@ -48,6 +48,7 @@ class AlphaStabilityIndicator:
     def __init__(
         self,
         symbol: str,
+        alpha_id: str,
         klines_1m: List[Dict[str, Any]],
         klines_15s: List[Dict[str, Any]],
         agg_trades: List[Dict[str, Any]]
@@ -62,6 +63,7 @@ class AlphaStabilityIndicator:
             agg_trades: List of aggregated trades (recent 60-120 seconds)
         """
         self.symbol = symbol
+        self.alpha_id = alpha_id
         self.klines_1m = klines_1m
         self.klines_15s = klines_15s
         self.agg_trades = agg_trades
@@ -90,6 +92,7 @@ class AlphaStabilityIndicator:
             
             return StabilityResult(
                 symbol=self.symbol,
+                alpha_id=self.alpha_id,
                 timestamp=self.timestamp,
                 signal=signal,
                 composite_score=composite_score,
@@ -101,11 +104,12 @@ class AlphaStabilityIndicator:
             # Return error result
             return StabilityResult(
                 symbol=self.symbol,
+                alpha_id=self.alpha_id,
                 timestamp=self.timestamp,
                 signal=Signal.RED,
                 composite_score=0.0,
                 metrics={},
-                recommendation="計算錯誤",
+                recommendation="calculation error",
                 error=str(e)
             )
     
