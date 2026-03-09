@@ -2,3 +2,7 @@
 venv/
 .vscode/
 __pycache__/
+*.log
+*.png
+*.jpg
+*.jpeg
