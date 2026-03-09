@@ -2,3 +2,9 @@
 venv/
 .vscode/
 __pycache__/
+*.pyc
+*.log
+*.png
+*.jpg
+*.jpeg
+.env*
