@@ -5,8 +5,11 @@ import logging
 import time
 from datetime import datetime, timezone, timedelta
 
-# Add src to path
-sys.path.append(os.path.join(os.getcwd(), "src"))
+# Add project paths
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(PROJECT_DIR, "../.."))
+sys.path.insert(0, os.path.join(PROJECT_DIR, "src"))
+sys.path.insert(0, os.path.join(REPO_ROOT, "shared"))
 
 # Setup logging
 logging.basicConfig(
@@ -14,7 +17,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("alpha_monitor.log")
+        logging.FileHandler(os.path.join(PROJECT_DIR, "alpha_monitor.log"))
     ]
 )
 logger = logging.getLogger(__name__)
@@ -103,7 +106,7 @@ def generate_report_image(data, timestamp):
              
              cell.set_facecolor(bg_color)
     
-    filename = "report.png"
+    filename = os.path.join(PROJECT_DIR, "report.png")
     plt.savefig(filename, bbox_inches='tight', dpi=150)
     plt.close()
     return filename

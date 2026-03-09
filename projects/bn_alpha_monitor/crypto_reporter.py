@@ -1,5 +1,8 @@
 import os
+import sys
 import requests
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 import pandas as pd
 import matplotlib.pyplot as plt
 from pandas.plotting import table
@@ -123,7 +126,7 @@ def generate_market_image(tickers, timestamp):
             if row % 2 == 0:
                 cell.set_facecolor('#f2f2f2')
 
-    filename = "market_report.png"
+    filename = os.path.join(PROJECT_DIR, "market_report.png")
     plt.savefig(filename, bbox_inches='tight', dpi=150)
     plt.close()
     return filename
