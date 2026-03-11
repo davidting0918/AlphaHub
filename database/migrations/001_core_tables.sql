@@ -66,29 +66,4 @@ CREATE INDEX idx_funding_rates_exchange ON funding_rates(exchange_id, symbol);
 CREATE INDEX idx_funding_rates_instrument ON funding_rates(instrument_id, funding_time DESC);
 CREATE INDEX idx_funding_rates_time ON funding_rates(funding_time DESC);
 
--- ============================================================
--- SEED DATA
--- ============================================================
-
-INSERT INTO exchanges (name, environment, base_url, ws_url, fee_structure) VALUES
-    ('okx', 'testnet',
-     'https://www.okx.com',
-     'wss://ws.okx.com:8443/ws/v5',
-     '{"spot_maker": 0.001, "spot_taker": 0.001, "perp_maker": 0.0002, "perp_taker": 0.0005}'
-    ),
-    ('okx', 'mainnet',
-     'https://www.okx.com',
-     'wss://ws.okx.com:8443/ws/v5',
-     '{"spot_maker": 0.001, "spot_taker": 0.001, "perp_maker": 0.0002, "perp_taker": 0.0005}'
-    ),
-    ('binance', 'mainnet',
-     'https://api.binance.com',
-     'wss://stream.binance.com:9443/ws',
-     '{"spot_maker": 0.001, "spot_taker": 0.001, "perp_maker": 0.0002, "perp_taker": 0.0005}'
-    ),
-    ('binance', 'testnet',
-     'https://testnet.binance.vision',
-     'wss://testnet.binance.vision/ws',
-     '{"spot_maker": 0.001, "spot_taker": 0.001, "perp_maker": 0.0002, "perp_taker": 0.0005}'
-    )
-ON CONFLICT (name, environment) DO NOTHING;
+-- No seed data — exchange records should be inserted manually.
