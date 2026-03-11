@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS instruments (
     metadata        JSONB DEFAULT '{}',              -- extra info (margin mode, max leverage, etc.)
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(exchange_id, symbol, instrument_type)
+    UNIQUE(exchange_id, symbol, type)
 );
 
 -- Funding rate historical data
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     funding_time    TIMESTAMPTZ NOT NULL,            -- settlement timestamp
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(exchange_id, symbol, funding_time)
+    UNIQUE(instrument_id, funding_time)
 );
 
 -- ============================================================
@@ -52,15 +52,14 @@ CREATE TABLE IF NOT EXISTS funding_rates (
 
 -- Instruments
 CREATE INDEX idx_instruments_exchange ON instruments(exchange_id);
-CREATE INDEX idx_instruments_type ON instruments(instrument_type);
+CREATE INDEX idx_instruments_type ON instruments(type);
 CREATE INDEX idx_instruments_base ON instruments(base_currency);
 CREATE INDEX idx_instruments_active ON instruments(exchange_id, is_active);
 -- instrument_id already has UNIQUE constraint which creates an index
 
 -- Funding rates
-CREATE INDEX idx_funding_rates_symbol_time ON funding_rates(symbol, funding_time DESC);
-CREATE INDEX idx_funding_rates_exchange ON funding_rates(exchange_id, symbol);
-CREATE INDEX idx_funding_rates_instrument ON funding_rates(instrument_id, funding_time DESC);
+CREATE INDEX idx_funding_rates_instrument_time ON funding_rates(instrument_id, funding_time DESC);
+CREATE INDEX idx_funding_rates_exchange ON funding_rates(exchange_id);
 CREATE INDEX idx_funding_rates_time ON funding_rates(funding_time DESC);
 
 -- No seed data — exchange records should be inserted manually.
