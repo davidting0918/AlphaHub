@@ -1,9 +1,3 @@
--- ============================================================
--- Migration 001: Core Tables
--- exchanges, instruments, funding_rates
--- ============================================================
-
--- Exchange configurations
 CREATE TABLE IF NOT EXISTS exchanges (
     id              SERIAL PRIMARY KEY,
     name            VARCHAR(50) NOT NULL,            -- 'okx', 'binance'
@@ -61,5 +55,3 @@ CREATE INDEX idx_instruments_active ON instruments(exchange_id, is_active);
 CREATE INDEX idx_funding_rates_instrument_time ON funding_rates(instrument_id, funding_time DESC);
 CREATE INDEX idx_funding_rates_exchange ON funding_rates(exchange_id);
 CREATE INDEX idx_funding_rates_time ON funding_rates(funding_time DESC);
-
--- No seed data — exchange records should be inserted manually.
