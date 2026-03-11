@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS exchanges (
 -- Tradeable instruments / pairs
 CREATE TABLE IF NOT EXISTS instruments (
     id              SERIAL PRIMARY KEY,
+    instrument_id   VARCHAR(100) NOT NULL UNIQUE,    -- standardized: '{exchange}_{type}_{base}_{quote}' e.g. 'okx_perpetual_BTC_USDT'
     exchange_id     INT NOT NULL REFERENCES exchanges(id),
     symbol          VARCHAR(50) NOT NULL,            -- exchange native symbol: 'BTC-USDT', 'BTC-USDT-SWAP'
     instrument_type VARCHAR(20) NOT NULL,            -- 'spot', 'perpetual', 'futures', 'option'
@@ -59,6 +60,7 @@ CREATE INDEX idx_instruments_exchange ON instruments(exchange_id);
 CREATE INDEX idx_instruments_type ON instruments(instrument_type);
 CREATE INDEX idx_instruments_base ON instruments(base_currency);
 CREATE INDEX idx_instruments_active ON instruments(exchange_id, is_active);
+-- instrument_id already has UNIQUE constraint which creates an index
 
 -- Funding rates
 CREATE INDEX idx_funding_rates_symbol_time ON funding_rates(symbol, funding_time DESC);
