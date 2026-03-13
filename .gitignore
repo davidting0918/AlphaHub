@@ -4,8 +4,14 @@ venv/
 __pycache__/
 *.pyc
 *.log
+.env*
+
+# Output directories (keep options_backtest output)
+output/
+!projects/options_backtest/output/
+
+# Images (except tracked outputs)
 *.png
+!projects/options_backtest/output/*.png
 *.jpg
 *.jpeg
-.env*
-output/
