@@ -666,8 +666,18 @@ async def run_backtest(
     end_date: str = "",
 ):
     """Main backtest entry point."""
-    db = PostgresClient()
-    await db.init_pool()
+    try:
+        db = PostgresClient()
+        await db.init_pool()
+    except ValueError as e:
+        print("\n" + "="*80)
+        print("  ⚠️  DATABASE CONNECTION ERROR")
+        print("="*80)
+        print(f"  {e}")
+        print("\n  Please set DATABASE_URL environment variable:")
+        print("    export DATABASE_URL='postgresql://user:pass@host:5432/db'")
+        print("="*80 + "\n")
+        return None
 
     config = IVRVConfig(
         underlying=underlying,
