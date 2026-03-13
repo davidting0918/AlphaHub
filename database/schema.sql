@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS exchanges (
     id              SERIAL PRIMARY KEY,
-    name            VARCHAR(50) NOT NULL,            -- 'okx', 'binance'
+    name            VARCHAR(50) NOT NULL,            -- 'OKX', 'BINANCEFUTURES'
+    adaptor         VARCHAR(100) NOT NULL,           -- adaptor package name: 'okx', 'binance' → adaptor.{adaptor}.client
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(name)

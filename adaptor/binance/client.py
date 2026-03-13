@@ -2,7 +2,7 @@
 Binance API Client - Sync and Async HTTP Client Layer
 
 This module provides unified sync and async HTTP clients for all Binance API endpoints.
-Currently supports Binance Alpha API with extensibility for future APIs (Spot, Futures, etc.)
+Supports Futures (perpetual instruments, funding rates) and Binance Alpha API.
 """
 
 import requests
@@ -14,6 +14,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from httpx import Timeout, Limits
 
+from .parser import BinanceParser
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,20 @@ class BinanceAPIError(BinanceClientError):
 
 class BinanceClient:
     
+    FUTURES_BASE_URL = "https://fapi.binance.com"
+    
     def __init__(
         self,
         base_url: str = "https://www.binance.com",
         timeout: int = 30,
-        max_retries: int = 3
+        max_retries: int = 3,
+        exchange_name: str = "BINANCE",
     ):
         self.base_url = base_url
         self.timeout = timeout
         self.max_retries = max_retries
+        self.exchange_name = exchange_name
+        self._parser = BinanceParser()
         
         self._session = requests.Session()
         
@@ -123,6 +129,48 @@ class BinanceClient:
             logger.error(f"Unexpected error during request: {str(e)}")
             raise BinanceClientError(f"Unexpected error: {str(e)}")
     
+    # Futures API Methods (Public)
+
+    def get_futures_exchange_info(self) -> Dict[str, Any]:
+        """
+        Get USDT-M Futures exchange info (all symbols/contracts).
+        Endpoint: GET /fapi/v1/exchangeInfo
+        """
+        url = f"{self.FUTURES_BASE_URL}/fapi/v1/exchangeInfo"
+        try:
+            response = self._session.request(
+                method="GET", url=url, timeout=self.timeout
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except requests.exceptions.RequestException as e:
+            raise BinanceClientError(f"Request failed: {str(e)}")
+
+    # High-level methods that return parsed/standardized data
+
+    def getInstruments(self) -> List[Dict[str, Any]]:
+        """
+        Get and parse perpetual instruments from Binance USDT-M Futures.
+        
+        Binance uses contractType="PERPETUAL" in exchangeInfo.
+        
+        Returns:
+            List of standardized instrument dicts with instrument_id prefixed
+            by exchange_name (e.g., "BINANCE_PERP_BTC_USDT")
+        """
+        raw_response = self.get_futures_exchange_info()
+        instruments = self._parser.parse_instruments(raw_response)
+
+        for inst in instruments:
+            inst['instrument_id'] = (
+                f"{self.exchange_name}_PERP_{inst['base_currency']}_{inst['quote_currency']}"
+            )
+
+        return instruments
+
     # Binance Alpha API Methods (Public)
 
     def get_alpha_token_list(self) -> Dict[str, Any]:
@@ -161,16 +209,21 @@ class BinanceClient:
 class AsyncBinanceClient:
     """Async HTTP client for Binance API with batch request support"""
     
+    FUTURES_BASE_URL = "https://fapi.binance.com"
+    
     def __init__(
         self,
         base_url: str = "https://www.binance.com",
         timeout: int = 30,
         max_retries: int = 3,
-        max_connections: int = 100
+        max_connections: int = 100,
+        exchange_name: str = "BINANCE",
     ):
         self.base_url = base_url
         self.timeout = timeout
         self.max_retries = max_retries
+        self.exchange_name = exchange_name
+        self._parser = BinanceParser()
         
         timeout_config = Timeout(timeout)
         limits = Limits(
@@ -245,6 +298,43 @@ class AsyncBinanceClient:
             logger.error(f"Unexpected error during request: {str(e)}")
             raise BinanceClientError(f"Unexpected error: {str(e)}")
     
+    # Futures API Methods (Public)
+
+    async def get_futures_exchange_info(self) -> Dict[str, Any]:
+        """
+        Get USDT-M Futures exchange info (all symbols/contracts).
+        Endpoint: GET /fapi/v1/exchangeInfo
+        """
+        if not self._client:
+            raise BinanceClientError("Client not initialized. Use 'async with' context manager.")
+        try:
+            response = await self._client.request(
+                method="GET", url=self.FUTURES_BASE_URL + "/fapi/v1/exchangeInfo"
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except httpx.HTTPError as e:
+            raise BinanceClientError(f"HTTP error: {str(e)}")
+
+    # High-level methods
+
+    async def getInstruments(self) -> List[Dict[str, Any]]:
+        """
+        Get and parse perpetual instruments from Binance USDT-M Futures.
+        """
+        raw_response = await self.get_futures_exchange_info()
+        instruments = self._parser.parse_instruments(raw_response)
+
+        for inst in instruments:
+            inst['instrument_id'] = (
+                f"{self.exchange_name}_PERP_{inst['base_currency']}_{inst['quote_currency']}"
+            )
+
+        return instruments
+
     # Binance Alpha API Methods (Public) - Single Symbol
 
     async def get_alpha_token_list(self) -> Dict[str, Any]:
