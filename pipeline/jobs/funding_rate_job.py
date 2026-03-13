@@ -1,11 +1,10 @@
 """
-Funding Rate Job
+Funding Rate Job (Async)
 
-Fetches funding rate history for PERP instruments on the exchange
-(resolved via portfolio) and inserts into funding_rates table.
+Fetches funding rate history for PERP instruments and inserts into DB.
 
 Usage:
-    python3 -m pipeline.job_manager --name OKX_MAIN_01 --start 20260101 --end 20260301 funding_rate
+    python3 -m pipeline.job_manager --name OKX_MAIN_01 --start 20260301 --end 20260313 funding_rate
 """
 
 import logging
@@ -22,26 +21,24 @@ class FundingRateJob(BaseJob):
     JOB_NAME = "FundingRateJob"
     RATE_LIMIT_DELAY = 0.1  # 100ms between API calls
 
-    def _get_perp_instruments(self, cursor, exchange_id: int) -> List[Dict[str, Any]]:
+    async def _get_perp_instruments(self, exchange_id: int) -> List[Dict[str, Any]]:
         """Get all active PERP instruments for the exchange."""
-        cursor.execute("""
+        return await self.db.read("""
             SELECT instrument_id, symbol
             FROM instruments
-            WHERE exchange_id = %s AND type = 'PERP' AND is_active = TRUE
+            WHERE exchange_id = $1 AND type = 'PERP' AND is_active = TRUE
             ORDER BY symbol
-        """, (exchange_id,))
-        return [dict(row) for row in cursor.fetchall()]
+        """, exchange_id)
 
-    def _get_latest_funding_time(self, cursor, instrument_id: str) -> Optional[int]:
-        """Get the most recent funding_time for an instrument (as ms timestamp)."""
-        cursor.execute("""
+    async def _get_latest_funding_time(self, instrument_id: str) -> Optional[int]:
+        """Get the most recent funding_time as ms timestamp."""
+        row = await self.db.read_one("""
             SELECT EXTRACT(EPOCH FROM funding_time) * 1000 AS funding_time_ms
             FROM funding_rates
-            WHERE instrument_id = %s
+            WHERE instrument_id = $1
             ORDER BY funding_time DESC
             LIMIT 1
-        """, (instrument_id,))
-        row = cursor.fetchone()
+        """, instrument_id)
         return int(row['funding_time_ms']) if row else None
 
     def _fetch_funding_history(
@@ -50,7 +47,7 @@ class FundingRateJob(BaseJob):
         start_ms: Optional[int] = None,
         end_ms: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch funding rate history with pagination."""
+        """Fetch funding rate history with pagination (sync — exchange API)."""
         all_rates = []
         before_cursor = end_ms
 
@@ -64,7 +61,6 @@ class FundingRateJob(BaseJob):
             if not rates:
                 break
 
-            # Filter by start time
             if start_ms:
                 filtered = [
                     r for r in rates
@@ -76,11 +72,9 @@ class FundingRateJob(BaseJob):
             else:
                 all_rates.extend(rates)
 
-            # If no explicit range, just get first page (incremental)
             if not start_ms and not end_ms:
                 break
 
-            # Paginate
             oldest = min(
                 rates,
                 key=lambda r: r['funding_time'] if r['funding_time'] else datetime.max.replace(tzinfo=timezone.utc)
@@ -101,33 +95,33 @@ class FundingRateJob(BaseJob):
 
         return all_rates
 
-    def _insert_funding_rates(
-        self, cursor, exchange_id: int, instrument_id: str, rates: List[Dict[str, Any]]
+    async def _insert_funding_rates(
+        self, exchange_id: int, instrument_id: str, rates: List[Dict[str, Any]]
     ) -> int:
         """Insert funding rates, skip duplicates. Returns new row count."""
         inserted = 0
         for rate in rates:
             if not rate['funding_time']:
                 continue
-            cursor.execute("""
+            result = await self.db.execute("""
                 INSERT INTO funding_rates (
                     exchange_id, instrument_id, funding_rate,
                     predicted_rate, funding_time, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, NOW())
+                ) VALUES ($1, $2, $3, $4, $5, NOW())
                 ON CONFLICT (instrument_id, funding_time) DO NOTHING
-                RETURNING id
-            """, (
+            """,
                 exchange_id,
                 instrument_id,
                 rate['funding_rate'],
                 rate.get('next_funding_rate'),
                 rate['funding_time'],
-            ))
-            if cursor.fetchone():
+            )
+            # asyncpg returns "INSERT 0 1" or "INSERT 0 0"
+            if result and result.endswith("1"):
                 inserted += 1
         return inserted
 
-    def run(self):
+    async def run(self):
         exchange_id = self.portfolio["exchange_id"]
         exchange_name = self.portfolio["exchange_name"]
 
@@ -137,34 +131,33 @@ class FundingRateJob(BaseJob):
         total_inserted = 0
         instruments_processed = 0
 
-        with self.get_cursor() as cursor:
-            instruments = self._get_perp_instruments(cursor, exchange_id)
-            logger.info(f"Found {len(instruments)} active PERP instruments on {exchange_name}")
+        instruments = await self._get_perp_instruments(exchange_id)
+        logger.info(f"Found {len(instruments)} active PERP instruments on {exchange_name}")
 
-            for inst in instruments:
-                symbol = inst['symbol']
-                instrument_id = inst['instrument_id']  # text: 'OKX_PERP_BTC_USDT'
+        for inst in instruments:
+            symbol = inst['symbol']
+            instrument_id = inst['instrument_id']
 
-                # Incremental: use latest known time if no explicit start
-                effective_start = start_ms
-                if not start_ms:
-                    effective_start = self._get_latest_funding_time(cursor, instrument_id)
+            effective_start = start_ms
+            if not start_ms:
+                effective_start = await self._get_latest_funding_time(instrument_id)
 
-                logger.info(
-                    f"Fetching {symbol}" +
-                    (f" from {self.start}" if self.start else "") +
-                    (f" to {self.end}" if self.end else "")
-                )
+            logger.info(
+                f"Fetching {symbol}" +
+                (f" from {self.start}" if self.start else "") +
+                (f" to {self.end}" if self.end else "")
+            )
 
-                rates = self._fetch_funding_history(symbol, effective_start, end_ms)
+            # Sync exchange API call
+            rates = self._fetch_funding_history(symbol, effective_start, end_ms)
 
-                if rates:
-                    inserted = self._insert_funding_rates(cursor, exchange_id, instrument_id, rates)
-                    total_inserted += inserted
-                    logger.info(f"  {symbol}: fetched {len(rates)}, inserted {inserted} new")
+            if rates:
+                inserted = await self._insert_funding_rates(exchange_id, instrument_id, rates)
+                total_inserted += inserted
+                logger.info(f"  {symbol}: fetched {len(rates)}, inserted {inserted} new")
 
-                instruments_processed += 1
-                time.sleep(self.RATE_LIMIT_DELAY)
+            instruments_processed += 1
+            time.sleep(self.RATE_LIMIT_DELAY)
 
         mode = "range" if start_ms or end_ms else "incremental"
         summary = (

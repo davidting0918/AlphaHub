@@ -1,18 +1,16 @@
 """
-Database Package
-
-Provides PostgreSQL client for CRUD operations.
+Database Package — Async PostgreSQL client (asyncpg).
 
 Usage:
     from database import get_db, init_database, close_database
 
-    # Initialize (call once at startup)
-    init_database()
-
-    # Use the client
+    await init_database()
     db = get_db()
-    rows = db.read("SELECT * FROM instruments WHERE type = %s", "PERP")
-    db.insert_one("exchanges", {"name": "OKX"})
+
+    rows = await db.read("SELECT * FROM instruments WHERE type = $1", "PERP")
+    await db.insert_one("exchanges", {"name": "OKX"})
+
+    await close_database()
 """
 
 from .client import PostgresClient, DatabaseManager, get_db, init_database, close_database

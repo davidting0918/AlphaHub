@@ -1,56 +1,51 @@
 """
-PostgreSQL Database Client
+PostgreSQL Async Database Client
 
-Sync client for CRUD operations on PostgreSQL.
-Follows the same pattern as VegaExchange's PostgresAsyncClient but synchronous.
+Async client for CRUD operations using asyncpg connection pool.
+Same pattern as VegaExchange's PostgresAsyncClient.
 
 Features:
-- Connection pooling via psycopg2 (thread-safe with pool)
-- Simple CRUD methods: read, read_one, insert_one, insert, execute
-- Upsert support
-- Environment-based configuration
+- Connection pooling via asyncpg
+- Simple CRUD: read, read_one, insert_one, insert, upsert_one, execute
 - Decimal → float auto-conversion
+- Environment-based configuration
 """
 
 import os
 import logging
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
+import asyncpg
+from asyncpg import Pool
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresClient:
     """
-    Sync PostgreSQL client with connection pooling.
+    Async PostgreSQL client with connection pooling.
 
     Usage:
         client = PostgresClient()
-        client.init_pool()
+        await client.init_pool()
 
-        rows = client.read("SELECT * FROM instruments WHERE type = %s", "PERP")
-        row = client.read_one("SELECT * FROM instruments WHERE instrument_id = %s", "OKX_PERP_BTC_USDT")
+        rows = await client.read("SELECT * FROM instruments WHERE type = $1", "PERP")
+        row = await client.read_one("SELECT * FROM instruments WHERE instrument_id = $1", "OKX_PERP_BTC_USDT")
 
-        client.insert_one("exchanges", {"name": "OKX"})
-        client.insert("funding_rates", [{"instrument_id": "...", "funding_rate": 0.001, ...}])
+        await client.insert_one("exchanges", {"name": "OKX"})
+        await client.execute("UPDATE instruments SET is_active = $1 WHERE id = $2", False, 123)
 
-        client.execute("UPDATE instruments SET is_active = %s WHERE id = %s", False, 123)
-
-        client.close()
+        await client.close()
     """
 
     def __init__(self, environment: Optional[str] = None):
         """
-        Initialize PostgreSQL client with environment support.
+        Initialize PostgreSQL client.
 
         Args:
-            environment: Environment name (test, staging, prod).
-                        If None, auto-detect from APP_ENV.
+            environment: 'test', 'staging', or 'prod' (default: from APP_ENV or 'prod')
         """
         if environment is None:
             environment = os.getenv("APP_ENV", "prod")
@@ -66,57 +61,40 @@ class PostgresClient:
 
         if not self.connection_string:
             raise ValueError(
-                f"No database URL found for environment '{environment}'. "
-                f"Set DATABASE_URL (or DATABASE_URL_TEST/DATABASE_URL_STAGING)."
+                f"No database URL for environment '{environment}'. "
+                f"Set DATABASE_URL (or DATABASE_URL_TEST / DATABASE_URL_STAGING)."
             )
 
-        self._pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+        self._pool: Optional[Pool] = None
 
-    def init_pool(self, min_conn: int = 1, max_conn: int = 10):
+    async def init_pool(self, min_size: int = 1, max_size: int = 20):
         """Initialize the connection pool."""
         if self._pool is not None:
             return
 
-        self._pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=min_conn,
-            maxconn=max_conn,
-            dsn=self.connection_string,
+        self._pool = await asyncpg.create_pool(
+            self.connection_string,
+            min_size=min_size,
+            max_size=max_size,
+            command_timeout=60,
         )
-        logger.info(f"Database pool initialized ({self.environment}, min={min_conn}, max={max_conn})")
+        logger.info(f"Database pool initialized ({self.environment}, min={min_size}, max={max_size})")
 
-    def close(self):
+    async def close(self):
         """Close all connections in the pool."""
         if self._pool:
-            self._pool.closeall()
+            await self._pool.close()
             self._pool = None
             logger.info("Database pool closed")
 
-    @contextmanager
-    def get_connection(self):
+    @asynccontextmanager
+    async def get_connection(self):
         """Get a connection from the pool (auto-initializes if needed)."""
         if self._pool is None:
-            self.init_pool()
+            await self.init_pool()
 
-        conn = self._pool.getconn()
-        try:
+        async with self._pool.acquire() as conn:
             yield conn
-        finally:
-            self._pool.putconn(conn)
-
-    @contextmanager
-    def get_cursor(self, commit: bool = True):
-        """Get a cursor with auto-commit/rollback."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            try:
-                yield cursor
-                if commit:
-                    conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                cursor.close()
 
     # ==================== Helpers ====================
 
@@ -134,55 +112,43 @@ class PostgresClient:
 
     # ==================== Read ====================
 
-    def read(self, query: str, *args: Any) -> List[Dict[str, Any]]:
+    async def read(self, query: str, *args: Any) -> List[Dict[str, Any]]:
         """
         Execute a SELECT query, return results as list of dicts.
 
         Args:
-            query: SQL query with %s placeholders
+            query: SQL with $1, $2, ... placeholders
             *args: Parameters
 
         Returns:
             List of dicts with Decimal values converted to float
         """
-        with self.get_cursor(commit=False) as cursor:
-            cursor.execute(query, args if args else None)
-            rows = cursor.fetchall()
+        async with self.get_connection() as conn:
+            rows = await conn.fetch(query, *args)
             return self._convert_decimals([dict(row) for row in rows])
 
-    def read_one(self, query: str, *args: Any) -> Optional[Dict[str, Any]]:
+    async def read_one(self, query: str, *args: Any) -> Optional[Dict[str, Any]]:
         """
         Execute a SELECT query, return first result as dict (or None).
-
-        Args:
-            query: SQL query with %s placeholders
-            *args: Parameters
-
-        Returns:
-            Dict or None, with Decimal values converted to float
         """
-        with self.get_cursor(commit=False) as cursor:
-            cursor.execute(query, args if args else None)
-            row = cursor.fetchone()
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(query, *args)
             if row:
                 return self._convert_decimals(dict(row))
             return None
 
     # ==================== Insert ====================
 
-    def insert_one(self, table: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    async def insert_one(self, table: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Insert a single record into a table.
+        Insert a single record. Returns the inserted row.
 
         Args:
             table: Table name
             data: Dict of column → value
-
-        Returns:
-            The inserted record (via RETURNING *)
         """
         columns = list(data.keys())
-        placeholders = ["%s"] * len(columns)
+        placeholders = [f"${i+1}" for i in range(len(columns))]
         values = list(data.values())
 
         query = f"""
@@ -191,53 +157,48 @@ class PostgresClient:
             RETURNING *
         """
 
-        with self.get_cursor() as cursor:
-            cursor.execute(query, values)
-            result = cursor.fetchone()
-            return self._convert_decimals(dict(result))
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(query, *values)
+            return self._convert_decimals(dict(row))
 
-    def insert(self, table: str, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def insert(self, table: str, data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Insert multiple records into a table.
+        Insert multiple records. Returns all inserted rows.
 
         Args:
             table: Table name
             data: List of dicts (all must have same keys)
-
-        Returns:
-            List of inserted records (via RETURNING *)
         """
         if not data:
             return []
 
         columns = list(data[0].keys())
-        placeholders = ["%s"] * len(columns)
-        template = f"({', '.join(placeholders)})"
+        n_cols = len(columns)
 
-        values_list = []
-        for record in data:
+        value_sets = []
+        all_values = []
+        for i, record in enumerate(data):
             if set(record.keys()) != set(columns):
                 raise ValueError(
                     f"All records must have the same columns. "
                     f"Expected: {columns}, Got: {list(record.keys())}"
                 )
-            values_list.append(tuple(record[col] for col in columns))
+            row_placeholders = [f"${j + i * n_cols + 1}" for j in range(n_cols)]
+            value_sets.append(f"({', '.join(row_placeholders)})")
+            for col in columns:
+                all_values.append(record[col])
 
         query = f"""
             INSERT INTO {table} ({', '.join(columns)})
-            VALUES {', '.join([template] * len(values_list))}
+            VALUES {', '.join(value_sets)}
             RETURNING *
         """
 
-        # Flatten values
-        flat_values = [v for row in values_list for v in row]
+        async with self.get_connection() as conn:
+            rows = await conn.fetch(query, *all_values)
+            return self._convert_decimals([dict(row) for row in rows])
 
-        with self.get_cursor() as cursor:
-            cursor.execute(query, flat_values)
-            results = cursor.fetchall()
-            return self._convert_decimals([dict(row) for row in results])
-
-    def upsert_one(
+    async def upsert_one(
         self,
         table: str,
         data: Dict[str, Any],
@@ -245,93 +206,66 @@ class PostgresClient:
         update_columns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
-        Insert or update a single record.
+        Insert or update a single record (ON CONFLICT DO UPDATE).
 
         Args:
             table: Table name
             data: Dict of column → value
-            conflict_columns: Columns for ON CONFLICT clause
-            update_columns: Columns to update on conflict (default: all non-conflict columns)
-
-        Returns:
-            The upserted record
+            conflict_columns: Columns for ON CONFLICT
+            update_columns: Columns to update on conflict (default: all non-conflict)
         """
         columns = list(data.keys())
-        placeholders = ["%s"] * len(columns)
+        placeholders = [f"${i+1}" for i in range(len(columns))]
         values = list(data.values())
 
         if update_columns is None:
             update_columns = [c for c in columns if c not in conflict_columns]
 
         conflict_clause = ", ".join(conflict_columns)
-        update_clause = ", ".join(
-            f"{col} = EXCLUDED.{col}" for col in update_columns
-        )
+        update_clause = ", ".join(f"{col} = EXCLUDED.{col}" for col in update_columns)
 
         query = f"""
             INSERT INTO {table} ({', '.join(columns)})
             VALUES ({', '.join(placeholders)})
-            ON CONFLICT ({conflict_clause}) DO UPDATE SET
-                {update_clause}
+            ON CONFLICT ({conflict_clause}) DO UPDATE SET {update_clause}
             RETURNING *
         """
 
-        with self.get_cursor() as cursor:
-            cursor.execute(query, values)
-            result = cursor.fetchone()
-            return self._convert_decimals(dict(result))
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(query, *values)
+            return self._convert_decimals(dict(row))
 
     # ==================== Execute ====================
 
-    def execute(self, query: str, *args: Any) -> str:
+    async def execute(self, query: str, *args: Any) -> str:
         """
-        Execute INSERT/UPDATE/DELETE query.
-
-        Args:
-            query: SQL query with %s placeholders
-            *args: Parameters
-
-        Returns:
-            Status message (e.g., "UPDATE 1")
+        Execute INSERT/UPDATE/DELETE. Returns status string.
         """
-        with self.get_cursor() as cursor:
-            cursor.execute(query, args if args else None)
-            return cursor.statusmessage
+        async with self.get_connection() as conn:
+            return await conn.execute(query, *args)
 
-    def execute_returning(self, query: str, *args: Any) -> Optional[Dict[str, Any]]:
+    async def execute_returning(self, query: str, *args: Any) -> Optional[Dict[str, Any]]:
         """
         Execute query with RETURNING clause, return first row.
-
-        Args:
-            query: SQL query with RETURNING clause
-            *args: Parameters
-
-        Returns:
-            Dict or None
         """
-        with self.get_cursor() as cursor:
-            cursor.execute(query, args if args else None)
-            row = cursor.fetchone()
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(query, *args)
             if row:
                 return self._convert_decimals(dict(row))
             return None
 
-    def execute_batch(self, query: str, data: List[tuple]) -> None:
+    async def execute_many(self, query: str, data: List[tuple]) -> None:
         """
-        Execute a query for multiple parameter sets (batch).
-
-        Args:
-            query: SQL query with %s placeholders
-            data: List of tuples, each is one set of parameters
+        Execute a query for multiple parameter sets.
         """
-        with self.get_cursor() as cursor:
-            psycopg2.extras.execute_batch(cursor, query, data, page_size=200)
+        async with self.get_connection() as conn:
+            await conn.executemany(query, data)
 
 
 # ==================== Singleton Manager ====================
 
 class DatabaseManager:
-    """Singleton database manager (mirrors VegaExchange pattern)."""
+    """Singleton database manager."""
 
     _instance: Optional["DatabaseManager"] = None
     _client: Optional[PostgresClient] = None
@@ -341,26 +275,22 @@ class DatabaseManager:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def initialize(self, environment: Optional[str] = None):
-        """Initialize the database client and pool."""
+    async def initialize(self, environment: Optional[str] = None):
         if self._client is None:
             self._client = PostgresClient(environment)
-            self._client.init_pool()
+            await self._client.init_pool()
 
     def get_client(self) -> PostgresClient:
-        """Get the database client (raises if not initialized)."""
         if self._client is None:
-            raise RuntimeError("Database not initialized. Call init_database() first.")
+            raise RuntimeError("Database not initialized. Call await init_database() first.")
         return self._client
 
-    def close(self):
-        """Close the database client."""
+    async def close(self):
         if self._client:
-            self._client.close()
+            await self._client.close()
             self._client = None
 
 
-# Module-level convenience functions
 _db_manager = DatabaseManager()
 
 
@@ -369,11 +299,11 @@ def get_db() -> PostgresClient:
     return _db_manager.get_client()
 
 
-def init_database(environment: Optional[str] = None):
+async def init_database(environment: Optional[str] = None):
     """Initialize the global database connection pool."""
-    _db_manager.initialize(environment)
+    await _db_manager.initialize(environment)
 
 
-def close_database():
+async def close_database():
     """Close the global database connection pool."""
-    _db_manager.close()
+    await _db_manager.close()

@@ -40,7 +40,6 @@ class OKXClient:
     """Sync HTTP client for OKX public API"""
     
     BASE_URL = "https://www.okx.com"
-    EXCHANGE_ID = 2  # DB mapping for OKX
     
     def __init__(
         self,
@@ -198,24 +197,21 @@ class OKXClient:
 
     # High-level methods that return parsed/standardized data
 
-    def getInstruments(self, inst_type: str = "SWAP") -> List[Dict[str, Any]]:
+    def getInstruments(self) -> List[Dict[str, Any]]:
         """
-        Get and parse instruments, returning standardized dicts.
+        Get and parse perpetual instruments, returning standardized dicts.
         
-        Args:
-            inst_type: "SWAP" for perpetuals, "SPOT" for spot
-            
+        OKX uses inst_type="SWAP" for perpetual contracts.
+        
         Returns:
             List of standardized instrument dicts with instrument_id prefixed
             by exchange_name (e.g., "OKX_PERP_BTC_USDT")
         """
-        raw_response = self.get_instruments(inst_type=inst_type)
-        instruments = self._parser.parse_instruments(raw_response, inst_type=inst_type)
+        raw_response = self.get_instruments(inst_type="SWAP")
+        instruments = self._parser.parse_instruments(raw_response, inst_type="SWAP")
         
-        # Fix instrument_id prefix to use exchange_name
-        type_prefix = "PERP" if inst_type == "SWAP" else inst_type
         for inst in instruments:
-            inst['instrument_id'] = f"{self.exchange_name}_{type_prefix}_{inst['base_currency']}_{inst['quote_currency']}"
+            inst['instrument_id'] = f"{self.exchange_name}_PERP_{inst['base_currency']}_{inst['quote_currency']}"
         
         return instruments
 
@@ -251,7 +247,6 @@ class AsyncOKXClient:
     """Async HTTP client for OKX public API"""
     
     BASE_URL = "https://www.okx.com"
-    EXCHANGE_ID = 2  # DB mapping for OKX
     
     def __init__(
         self,
@@ -373,24 +368,21 @@ class AsyncOKXClient:
 
     # High-level methods that return parsed/standardized data (async)
 
-    async def getInstruments(self, inst_type: str = "SWAP") -> List[Dict[str, Any]]:
+    async def getInstruments(self) -> List[Dict[str, Any]]:
         """
-        Get and parse instruments, returning standardized dicts.
+        Get and parse perpetual instruments, returning standardized dicts.
         
-        Args:
-            inst_type: "SWAP" for perpetuals, "SPOT" for spot
-            
+        OKX uses inst_type="SWAP" for perpetual contracts.
+        
         Returns:
             List of standardized instrument dicts with instrument_id prefixed
             by exchange_name (e.g., "OKX_PERP_BTC_USDT")
         """
-        raw_response = await self.get_instruments(inst_type=inst_type)
-        instruments = self._parser.parse_instruments(raw_response, inst_type=inst_type)
+        raw_response = await self.get_instruments(inst_type="SWAP")
+        instruments = self._parser.parse_instruments(raw_response, inst_type="SWAP")
         
-        # Fix instrument_id prefix to use exchange_name
-        type_prefix = "PERP" if inst_type == "SWAP" else inst_type
         for inst in instruments:
-            inst['instrument_id'] = f"{self.exchange_name}_{type_prefix}_{inst['base_currency']}_{inst['quote_currency']}"
+            inst['instrument_id'] = f"{self.exchange_name}_PERP_{inst['base_currency']}_{inst['quote_currency']}"
         
         return instruments
 

@@ -1,31 +1,26 @@
 """
 OKX API Adaptor Package
 
-This package provides both sync and async adapters for OKX public APIs:
-- Instruments: List perpetual swaps and spot instruments
-- Funding Rates: Current and historical funding rates
-
-The clients expose high-level methods (getInstruments, getFundingRates) that
-return standardized/parsed data. Parsing is handled internally.
-
 Sync Usage:
-    from adaptor.okx import OKXClient
-    client = OKXClient()
-    instruments = client.getInstruments(inst_type="SWAP")
+    from adaptor.okx import Client
+    client = Client()
+    instruments = client.getInstruments()
 
 Async Usage:
     from adaptor.okx import AsyncOKXClient
     async with AsyncOKXClient() as client:
-        instruments = await client.getInstruments(inst_type="SWAP")
+        instruments = await client.getInstruments()
 """
 
 from .client import OKXClient, AsyncOKXClient, OKXClientError, OKXAPIError
 
+# Standard alias for dynamic import by pipeline
+Client = OKXClient
+
 __all__ = [
+    'Client',
     'OKXClient',
     'AsyncOKXClient',
     'OKXClientError',
     'OKXAPIError',
 ]
-
-__version__ = '1.0.0'
