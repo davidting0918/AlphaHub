@@ -10,6 +10,7 @@ Usage:
     python3 -m pipeline.job_manager --name OKX_MAIN_01 --start 20260101 --end 20260301 funding_rate
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -137,10 +138,12 @@ class FundingRateJob(BaseJob):
 
     # ==================== Batch Insert ====================
 
+    BATCH_SIZE = 200  # rows per concurrent batch
+
     async def _batch_insert_funding_rates(
         self, exchange_id: int, instrument_id: str, rates: List[Dict[str, Any]]
     ) -> int:
-        """Batch insert funding rates using executemany. Skips duplicates."""
+        """Batch insert funding rates with concurrent chunks."""
         valid = [r for r in rates if r.get('funding_time')]
         if not valid:
             return 0
@@ -157,13 +160,16 @@ class FundingRateJob(BaseJob):
             for r in unique
         ]
 
-        await self.db.execute_many("""
+        query = """
             INSERT INTO funding_rates (
                 exchange_id, instrument_id, funding_rate,
                 predicted_rate, funding_time, updated_at
             ) VALUES ($1, $2, $3, $4, $5, NOW())
             ON CONFLICT (instrument_id, funding_time) DO NOTHING
-        """, rows)
+        """
+
+        chunks = [rows[i:i + self.BATCH_SIZE] for i in range(0, len(rows), self.BATCH_SIZE)]
+        await asyncio.gather(*[self.db.execute_many(query, c) for c in chunks])
 
         return len(rows)
 
