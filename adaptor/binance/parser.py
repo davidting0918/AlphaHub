@@ -110,6 +110,41 @@ class BinanceParser:
             if s.get('contractType') == 'PERPETUAL'
         ]
 
+    # ==================== Funding Rate Parsing ====================
+
+    def parse_funding_rate(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Parse a single Binance funding rate record.
+
+        Binance fields:
+        - symbol: "BTCUSDT"
+        - fundingRate: rate as decimal string
+        - fundingTime: settlement timestamp (ms)
+        - markPrice: mark price at funding time
+        """
+        return {
+            'inst_id': self.as_type(raw.get('symbol'), str, ''),
+            'funding_rate': self.as_type(raw.get('fundingRate'), float, 0.0),
+            'funding_time': self.ms_to_datetime(raw.get('fundingTime')),
+            'realized_rate': self.as_type(raw.get('fundingRate'), float, 0.0),  # Binance: fundingRate IS the realized rate
+            'next_funding_rate': None,  # Not available in history endpoint
+            'next_funding_time': None,
+            'metadata': {
+                'mark_price': self.as_type(raw.get('markPrice'), str, ''),
+            }
+        }
+
+    def parse_funding_rates(self, raw_data) -> List[Dict[str, Any]]:
+        """
+        Parse funding rates response.
+
+        Args:
+            raw_data: List of funding rate records (Binance returns a list directly)
+        """
+        if not raw_data:
+            return []
+        return [self.parse_funding_rate(item) for item in raw_data]
+
     # ==================== Alpha Parsing ====================
 
     def parse_token_list(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -166,5 +201,3 @@ class BinanceParser:
         ]
 
 
-# Keep backward compatibility alias
-BinanceAlphaParser = BinanceParser
