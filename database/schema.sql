@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS portfolios (
 CREATE TABLE IF NOT EXISTS funding_rates (
     id              SERIAL PRIMARY KEY,
     exchange_id     INT NOT NULL REFERENCES exchanges(id),
-    instrument_id   INT REFERENCES instruments(id),  -- link to the perpetual instrument
+    instrument_id   VARCHAR(100) NOT NULL REFERENCES instruments(instrument_id),  -- e.g. 'OKX_PERP_BTC_USDT'
     funding_rate    DECIMAL NOT NULL,                -- e.g. 0.0001 = 0.01%
     predicted_rate  DECIMAL,                         -- next predicted rate (if available)
     funding_time    TIMESTAMPTZ NOT NULL,            -- settlement timestamp

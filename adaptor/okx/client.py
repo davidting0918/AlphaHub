@@ -3,6 +3,9 @@ OKX API Client - Sync and Async HTTP Client Layer
 
 This module provides unified sync and async HTTP clients for OKX public API endpoints.
 Supports instruments listing and funding rate queries (no authentication required).
+
+Each exchange client declares EXCHANGE_ID for DB mapping and provides high-level
+methods (getInstruments, getFundingRates) that return standardized/parsed output.
 """
 
 import requests
@@ -13,6 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from httpx import Timeout, Limits
 
+from .parser import OKXParser
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +40,20 @@ class OKXClient:
     """Sync HTTP client for OKX public API"""
     
     BASE_URL = "https://www.okx.com"
+    EXCHANGE_ID = 2  # DB mapping for OKX
     
     def __init__(
         self,
         base_url: str = None,
         timeout: int = 30,
-        max_retries: int = 3
+        max_retries: int = 3,
+        exchange_name: str = "OKX"
     ):
         self.base_url = base_url or self.BASE_URL
         self.timeout = timeout
         self.max_retries = max_retries
+        self.exchange_name = exchange_name  # For instrument_id prefix
+        self._parser = OKXParser()
         
         self._session = requests.Session()
         
@@ -188,22 +196,76 @@ class OKXClient:
             params["after"] = after
         return self._request("GET", endpoint, params=params)
 
+    # High-level methods that return parsed/standardized data
+
+    def getInstruments(self, inst_type: str = "SWAP") -> List[Dict[str, Any]]:
+        """
+        Get and parse instruments, returning standardized dicts.
+        
+        Args:
+            inst_type: "SWAP" for perpetuals, "SPOT" for spot
+            
+        Returns:
+            List of standardized instrument dicts with instrument_id prefixed
+            by exchange_name (e.g., "OKX_PERP_BTC_USDT")
+        """
+        raw_response = self.get_instruments(inst_type=inst_type)
+        instruments = self._parser.parse_instruments(raw_response, inst_type=inst_type)
+        
+        # Fix instrument_id prefix to use exchange_name
+        type_prefix = "PERP" if inst_type == "SWAP" else inst_type
+        for inst in instruments:
+            inst['instrument_id'] = f"{self.exchange_name}_{type_prefix}_{inst['base_currency']}_{inst['quote_currency']}"
+        
+        return instruments
+
+    def getFundingRates(
+        self,
+        inst_id: str,
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get and parse funding rate history, returning standardized dicts.
+        
+        Args:
+            inst_id: Instrument ID (e.g., "BTC-USDT-SWAP")
+            limit: Number of results (max 100)
+            before: Pagination - return results before this fundingTime (ms)
+            after: Pagination - return results after this fundingTime (ms)
+            
+        Returns:
+            List of standardized funding rate dicts
+        """
+        raw_response = self.get_funding_rate_history(
+            inst_id=inst_id,
+            limit=limit,
+            before=before,
+            after=after
+        )
+        return self._parser.parse_funding_rates(raw_response)
+
 
 class AsyncOKXClient:
     """Async HTTP client for OKX public API"""
     
     BASE_URL = "https://www.okx.com"
+    EXCHANGE_ID = 2  # DB mapping for OKX
     
     def __init__(
         self,
         base_url: str = None,
         timeout: int = 30,
         max_retries: int = 3,
-        max_connections: int = 100
+        max_connections: int = 100,
+        exchange_name: str = "OKX"
     ):
         self.base_url = base_url or self.BASE_URL
         self.timeout = timeout
         self.max_retries = max_retries
+        self.exchange_name = exchange_name  # For instrument_id prefix
+        self._parser = OKXParser()
         
         timeout_config = Timeout(timeout)
         limits = Limits(
@@ -308,3 +370,53 @@ class AsyncOKXClient:
         if after:
             params["after"] = after
         return await self._request("GET", endpoint, params=params)
+
+    # High-level methods that return parsed/standardized data (async)
+
+    async def getInstruments(self, inst_type: str = "SWAP") -> List[Dict[str, Any]]:
+        """
+        Get and parse instruments, returning standardized dicts.
+        
+        Args:
+            inst_type: "SWAP" for perpetuals, "SPOT" for spot
+            
+        Returns:
+            List of standardized instrument dicts with instrument_id prefixed
+            by exchange_name (e.g., "OKX_PERP_BTC_USDT")
+        """
+        raw_response = await self.get_instruments(inst_type=inst_type)
+        instruments = self._parser.parse_instruments(raw_response, inst_type=inst_type)
+        
+        # Fix instrument_id prefix to use exchange_name
+        type_prefix = "PERP" if inst_type == "SWAP" else inst_type
+        for inst in instruments:
+            inst['instrument_id'] = f"{self.exchange_name}_{type_prefix}_{inst['base_currency']}_{inst['quote_currency']}"
+        
+        return instruments
+
+    async def getFundingRates(
+        self,
+        inst_id: str,
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get and parse funding rate history, returning standardized dicts.
+        
+        Args:
+            inst_id: Instrument ID (e.g., "BTC-USDT-SWAP")
+            limit: Number of results (max 100)
+            before: Pagination - return results before this fundingTime (ms)
+            after: Pagination - return results after this fundingTime (ms)
+            
+        Returns:
+            List of standardized funding rate dicts
+        """
+        raw_response = await self.get_funding_rate_history(
+            inst_id=inst_id,
+            limit=limit,
+            before=before,
+            after=after
+        )
+        return self._parser.parse_funding_rates(raw_response)

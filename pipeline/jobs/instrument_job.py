@@ -12,7 +12,6 @@ import json
 import logging
 from typing import Any, Dict, List
 
-from adaptor.okx.parser import OKXParser
 from pipeline.base_job import BaseJob
 
 logger = logging.getLogger(__name__)
@@ -20,10 +19,6 @@ logger = logging.getLogger(__name__)
 
 class InstrumentJob(BaseJob):
     JOB_NAME = "InstrumentJob"
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.parser = OKXParser()
 
     def _upsert_instruments(
         self, cursor, exchange_id: int, instruments: List[Dict[str, Any]]
@@ -93,20 +88,14 @@ class InstrumentJob(BaseJob):
         exchange_id = self.portfolio["exchange_id"]
         exchange_name = self.portfolio["exchange_name"]
 
-        # Fetch instruments from exchange
+        # Fetch instruments from exchange using high-level method
+        # getInstruments() returns parsed data with correct instrument_id prefix
         logger.info(f"Fetching SWAP instruments from {exchange_name}...")
-        swap_response = self.exchange_client.get_instruments(inst_type="SWAP")
-        swap_instruments = self.parser.parse_instruments(swap_response, inst_type="SWAP")
-        # Fix instrument_id prefix to match exchange name in DB
-        for inst in swap_instruments:
-            inst['instrument_id'] = f"{exchange_name}_PERP_{inst['base_currency']}_{inst['quote_currency']}"
+        swap_instruments = self.exchange_client.getInstruments(inst_type="SWAP")
         logger.info(f"Fetched {len(swap_instruments)} SWAP instruments")
 
         logger.info(f"Fetching SPOT instruments from {exchange_name}...")
-        spot_response = self.exchange_client.get_instruments(inst_type="SPOT")
-        spot_instruments = self.parser.parse_instruments(spot_response, inst_type="SPOT")
-        for inst in spot_instruments:
-            inst['instrument_id'] = f"{exchange_name}_SPOT_{inst['base_currency']}_{inst['quote_currency']}"
+        spot_instruments = self.exchange_client.getInstruments(inst_type="SPOT")
         logger.info(f"Fetched {len(spot_instruments)} SPOT instruments")
 
         all_instruments = swap_instruments + spot_instruments
@@ -122,4 +111,3 @@ class InstrumentJob(BaseJob):
             f"Inserted: {stats['inserted']}, Updated: {stats['updated']}"
         )
         logger.info(f"Complete: {summary}")
-        self.notify_success(summary)
