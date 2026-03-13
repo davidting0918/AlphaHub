@@ -13,7 +13,6 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from adaptor.okx.parser import OKXParser
 from pipeline.base_job import BaseJob
 
 logger = logging.getLogger(__name__)
@@ -23,29 +22,25 @@ class FundingRateJob(BaseJob):
     JOB_NAME = "FundingRateJob"
     RATE_LIMIT_DELAY = 0.1  # 100ms between API calls
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.parser = OKXParser()
-
     def _get_perp_instruments(self, cursor, exchange_id: int) -> List[Dict[str, Any]]:
-        """Get all active PERP instruments for the exchange"""
+        """Get all active PERP instruments for the exchange."""
         cursor.execute("""
-            SELECT id, instrument_id, symbol
+            SELECT instrument_id, symbol
             FROM instruments
             WHERE exchange_id = %s AND type = 'PERP' AND is_active = TRUE
             ORDER BY symbol
         """, (exchange_id,))
         return [dict(row) for row in cursor.fetchall()]
 
-    def _get_latest_funding_time(self, cursor, instrument_db_id: int) -> Optional[int]:
-        """Get the most recent funding_time for an instrument (as ms timestamp)"""
+    def _get_latest_funding_time(self, cursor, instrument_id: str) -> Optional[int]:
+        """Get the most recent funding_time for an instrument (as ms timestamp)."""
         cursor.execute("""
             SELECT EXTRACT(EPOCH FROM funding_time) * 1000 AS funding_time_ms
             FROM funding_rates
             WHERE instrument_id = %s
             ORDER BY funding_time DESC
             LIMIT 1
-        """, (instrument_db_id,))
+        """, (instrument_id,))
         row = cursor.fetchone()
         return int(row['funding_time_ms']) if row else None
 
@@ -60,13 +55,12 @@ class FundingRateJob(BaseJob):
         before_cursor = end_ms
 
         while True:
-            response = self.exchange_client.get_funding_rate_history(
+            rates = self.exchange_client.getFundingRates(
                 inst_id=symbol,
                 limit=100,
                 before=str(before_cursor) if before_cursor else None,
             )
 
-            rates = self.parser.parse_funding_rates(response)
             if not rates:
                 break
 
@@ -77,7 +71,6 @@ class FundingRateJob(BaseJob):
                     if r['funding_time'] and r['funding_time'].timestamp() * 1000 >= start_ms
                 ]
                 all_rates.extend(filtered)
-                # If some rates were filtered out, we've gone past start
                 if len(filtered) < len(rates):
                     break
             else:
@@ -109,7 +102,7 @@ class FundingRateJob(BaseJob):
         return all_rates
 
     def _insert_funding_rates(
-        self, cursor, exchange_id: int, instrument_db_id: int, rates: List[Dict[str, Any]]
+        self, cursor, exchange_id: int, instrument_id: str, rates: List[Dict[str, Any]]
     ) -> int:
         """Insert funding rates, skip duplicates. Returns new row count."""
         inserted = 0
@@ -125,7 +118,7 @@ class FundingRateJob(BaseJob):
                 RETURNING id
             """, (
                 exchange_id,
-                instrument_db_id,
+                instrument_id,
                 rate['funding_rate'],
                 rate.get('next_funding_rate'),
                 rate['funding_time'],
@@ -150,12 +143,12 @@ class FundingRateJob(BaseJob):
 
             for inst in instruments:
                 symbol = inst['symbol']
-                instrument_db_id = inst['id']
+                instrument_id = inst['instrument_id']  # text: 'OKX_PERP_BTC_USDT'
 
                 # Incremental: use latest known time if no explicit start
                 effective_start = start_ms
                 if not start_ms:
-                    effective_start = self._get_latest_funding_time(cursor, instrument_db_id)
+                    effective_start = self._get_latest_funding_time(cursor, instrument_id)
 
                 logger.info(
                     f"Fetching {symbol}" +
@@ -166,7 +159,7 @@ class FundingRateJob(BaseJob):
                 rates = self._fetch_funding_history(symbol, effective_start, end_ms)
 
                 if rates:
-                    inserted = self._insert_funding_rates(cursor, exchange_id, instrument_db_id, rates)
+                    inserted = self._insert_funding_rates(cursor, exchange_id, instrument_id, rates)
                     total_inserted += inserted
                     logger.info(f"  {symbol}: fetched {len(rates)}, inserted {inserted} new")
 
@@ -182,4 +175,3 @@ class FundingRateJob(BaseJob):
             f"New rates: {total_inserted}"
         )
         logger.info(f"Complete: {summary}")
-        self.notify_success(summary)

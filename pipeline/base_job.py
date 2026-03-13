@@ -4,7 +4,6 @@ Base Job Class
 All pipeline jobs inherit from this. Provides:
 - DB connection management
 - Portfolio → Exchange client resolution
-- Telegram notifications
 - Common interface: setup() → run() → teardown()
 """
 
@@ -18,9 +17,32 @@ from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras
 
-from pipeline.notify import send_telegram
-
 logger = logging.getLogger(__name__)
+
+
+# Exchange name → client class mapping
+# Each client class must have EXCHANGE_ID class variable
+_EXCHANGE_CLIENT_MAP = {
+    "OKX": ("adaptor.okx.client", "OKXClient"),
+    "OKXTEST": ("adaptor.okx.client", "OKXClient"),
+    # "BINANCE": ("adaptor.binance.client", "BinanceClient"),  # TODO
+}
+
+
+def _get_client_class(exchange_name: str):
+    """Dynamically import and return the client class for an exchange."""
+    name_upper = exchange_name.upper()
+    if name_upper not in _EXCHANGE_CLIENT_MAP:
+        raise ValueError(
+            f"Exchange '{exchange_name}' not supported. "
+            f"Available: {list(_EXCHANGE_CLIENT_MAP.keys())}"
+        )
+    
+    module_path, class_name = _EXCHANGE_CLIENT_MAP[name_upper]
+    
+    import importlib
+    module = importlib.import_module(module_path)
+    return getattr(module, class_name)
 
 
 class BaseJob(ABC):
@@ -35,7 +57,7 @@ class BaseJob(ABC):
         - teardown(self) → called after run() (always, even on error)
     """
 
-    # Subclass should set this for logging/notifications
+    # Subclass should set this for logging
     JOB_NAME: str = "BaseJob"
 
     def __init__(
@@ -44,8 +66,6 @@ class BaseJob(ABC):
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
         db_url: Optional[str] = None,
-        telegram_bot_token: Optional[str] = None,
-        telegram_chat_id: Optional[str] = None,
     ):
         self.portfolio_name = portfolio_name
         self.start = start
@@ -53,8 +73,6 @@ class BaseJob(ABC):
 
         # Config from env or params
         self.db_url = db_url or os.environ.get("DATABASE_URL")
-        self.telegram_bot_token = telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
-        self.telegram_chat_id = telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID")
 
         if not self.db_url:
             raise ValueError("DATABASE_URL environment variable or db_url parameter required")
@@ -119,31 +137,22 @@ class BaseJob(ABC):
 
     def _resolve_exchange_client(self):
         """Resolve exchange client based on portfolio's exchange_id"""
-        from pipeline.exchange_registry import get_exchange_client
-
         exchange_id = self.portfolio["exchange_id"]
         exchange_name = self.portfolio["exchange_name"]
 
-        self.exchange_client = get_exchange_client(exchange_id, exchange_name)
-        logger.info(f"[{self.JOB_NAME}] Using exchange client for: {exchange_name} (id={exchange_id})")
-
-    # ==================== Notifications ====================
-
-    def notify(self, message: str, silent: bool = False) -> bool:
-        return send_telegram(
-            bot_token=self.telegram_bot_token,
-            chat_id=self.telegram_chat_id,
-            message=message,
-            disable_notification=silent,
-        )
-
-    def notify_success(self, summary: str):
-        message = f"✅ <b>{self.JOB_NAME}</b>\n{summary}"
-        self.notify(message, silent=True)
-
-    def notify_error(self, error: str):
-        message = f"❌ <b>{self.JOB_NAME} Failed</b>\n<code>{error[:500]}</code>"
-        self.notify(message, silent=False)
+        # Get the client class for this exchange
+        client_class = _get_client_class(exchange_name)
+        
+        # Verify the client class has correct EXCHANGE_ID
+        if hasattr(client_class, 'EXCHANGE_ID') and client_class.EXCHANGE_ID != exchange_id:
+            logger.warning(
+                f"Client {client_class.__name__}.EXCHANGE_ID={client_class.EXCHANGE_ID} "
+                f"doesn't match DB exchange_id={exchange_id}"
+            )
+        
+        # Create client instance with exchange_name for instrument_id prefixing
+        self.exchange_client = client_class(exchange_name=exchange_name)
+        logger.info(f"[{self.JOB_NAME}] Using {client_class.__name__} for: {exchange_name} (id={exchange_id})")
 
     # ==================== Lifecycle ====================
 
@@ -172,7 +181,6 @@ class BaseJob(ABC):
             logger.info(f"[{self.JOB_NAME}] Completed successfully")
         except Exception as e:
             logger.exception(f"[{self.JOB_NAME}] Failed: {e}")
-            self.notify_error(str(e))
             raise
         finally:
             self.teardown()

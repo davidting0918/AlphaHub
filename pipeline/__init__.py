@@ -1,22 +1,19 @@
 """
 AlphaHub Data Pipelines
 
-This package contains data collection pipelines for fetching and storing
-exchange data (instruments, funding rates, etc.) into the database.
-
-Available pipelines:
-- okx_instruments: Fetch and upsert OKX instruments (SWAP + SPOT)
-- okx_funding_rates: Fetch and store OKX funding rate history
+Modular job system for fetching and storing exchange data.
 
 Usage:
-    python -m pipeline.okx_instruments
-    python -m pipeline.okx_funding_rates --backfill
+    python -m pipeline.job_manager --name OKX_MAIN_01 instrument
+    python -m pipeline.job_manager --name OKX_MAIN_01 --start 20260301 --end 20260313 funding_rate
 """
 
-from .base import BasePipeline
-from .notify import send_telegram
+from .base_job import BaseJob
+from .jobs.instrument_job import InstrumentJob
+from .jobs.funding_rate_job import FundingRateJob
 
 __all__ = [
-    'BasePipeline',
-    'send_telegram',
+    'BaseJob',
+    'InstrumentJob',
+    'FundingRateJob',
 ]
