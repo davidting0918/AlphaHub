@@ -364,6 +364,267 @@ class FundingRateBacktester:
 
         print(f"{'=' * 120}\n")
 
+    # ==================== Save Results ====================
+
+    def save_results(self, results: List[BacktestResult], output_dir: str):
+        """Save all results to CSV + JSON."""
+        os.makedirs(output_dir, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')
+
+        # Build DataFrame from all viable results
+        viable = [r for r in results if r.viable]
+        if not viable:
+            logger.warning("No viable results to save")
+            return
+
+        rows = []
+        for r in viable:
+            rows.append({
+                'exchange': r.exchange,
+                'symbol': r.symbol,
+                'pair': r.pair,
+                'net_pnl': r.net_pnl,
+                'total_return_pct': r.total_return_pct,
+                'apr_pct': r.apr_pct,
+                'sharpe': r.sharpe,
+                'max_drawdown_pct': r.max_drawdown_pct,
+                'win_rate_pct': r.win_rate_pct,
+                'positive_rate_pct': r.positive_rate_pct,
+                'total_funding_pnl': r.total_funding_pnl,
+                'total_fee_cost': r.total_fee_cost,
+                'num_settlements': r.num_settlements,
+                'holding_days': r.holding_days,
+                'avg_funding_rate': r.avg_funding_rate,
+                'entry_price': r.entry_price,
+                'exit_price': r.exit_price,
+                'price_change_pct': r.price_change_pct,
+                'date_start': r.date_start.isoformat() if r.date_start else None,
+                'date_end': r.date_end.isoformat() if r.date_end else None,
+                'profitable': r.net_pnl > 0,
+            })
+
+        df = pd.DataFrame(rows).sort_values('apr_pct', ascending=False)
+
+        # Save CSV
+        csv_path = os.path.join(output_dir, f"backtest_{ts}.csv")
+        df.to_csv(csv_path, index=False)
+        logger.info(f"Results saved: {csv_path}")
+
+        # Save JSON (detailed with equity curves for top instruments)
+        import json
+        profitable = [r for r in viable if r.net_pnl > 0]
+        profitable.sort(key=lambda r: r.apr_pct, reverse=True)
+
+        json_data = {
+            'timestamp': ts,
+            'config': {
+                'initial_capital': INITIAL_CAPITAL,
+                'spot_fee': SPOT_FEE,
+                'perp_fee': PERP_FEE,
+                'slippage': SLIPPAGE,
+                'entry_cost_rate': ENTRY_COST_RATE,
+                'exit_cost_rate': EXIT_COST_RATE,
+            },
+            'summary': {
+                'total_analyzed': len(viable),
+                'profitable': len(profitable),
+                'unprofitable': len(viable) - len(profitable),
+                'skipped': len(results) - len(viable),
+            },
+            'profitable_instruments': [
+                {
+                    'exchange': r.exchange, 'symbol': r.symbol, 'pair': r.pair,
+                    'net_pnl': r.net_pnl, 'apr_pct': r.apr_pct, 'sharpe': r.sharpe,
+                    'max_drawdown_pct': r.max_drawdown_pct, 'win_rate_pct': r.win_rate_pct,
+                    'positive_rate_pct': r.positive_rate_pct,
+                    'num_settlements': r.num_settlements, 'holding_days': r.holding_days,
+                    'avg_funding_rate': r.avg_funding_rate,
+                    'equity_curve': r.equity_curve,
+                }
+                for r in profitable[:30]
+            ],
+        }
+
+        json_path = os.path.join(output_dir, f"backtest_{ts}.json")
+        with open(json_path, 'w') as f:
+            json.dump(json_data, f, indent=2, default=str)
+        logger.info(f"Details saved: {json_path}")
+
+        return csv_path, json_path
+
+    # ==================== Visualizations ====================
+
+    def generate_charts(self, results: List[BacktestResult], output_dir: str):
+        """Generate backtest visualization charts."""
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
+
+        os.makedirs(output_dir, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')
+
+        viable = [r for r in results if r.viable]
+        profitable = sorted([r for r in viable if r.net_pnl > 0], key=lambda r: r.apr_pct, reverse=True)
+        all_sorted = sorted(viable, key=lambda r: r.apr_pct, reverse=True)
+
+        if not viable:
+            return
+
+        # ---- Chart 1: Overview Dashboard (4 subplots) ----
+        fig = plt.figure(figsize=(20, 16), facecolor='#1a1a2e')
+        fig.suptitle('Funding Rate Arbitrage — Backtest Report', fontsize=20, color='white', fontweight='bold', y=0.98)
+        gs = GridSpec(2, 2, hspace=0.35, wspace=0.3, left=0.08, right=0.95, top=0.93, bottom=0.06)
+
+        ax_colors = {'facecolor': '#16213e'}
+        text_color = '#e0e0e0'
+
+        # 1a: APR Distribution
+        ax1 = fig.add_subplot(gs[0, 0], **ax_colors)
+        aprs = [r.apr_pct for r in all_sorted]
+        colors = ['#00d4aa' if a > 0 else '#ff4757' for a in aprs]
+        ax1.bar(range(len(aprs)), aprs, color=colors, alpha=0.8, width=1.0)
+        ax1.axhline(y=0, color='white', linewidth=0.5, alpha=0.5)
+        ax1.set_title('APR Distribution (All Instruments)', color=text_color, fontsize=13)
+        ax1.set_xlabel('Instruments (sorted by APR)', color=text_color, fontsize=10)
+        ax1.set_ylabel('APR %', color=text_color, fontsize=10)
+        ax1.tick_params(colors=text_color)
+        ax1.set_xlim(-1, len(aprs))
+
+        # 1b: Top 20 Profitable APR
+        ax2 = fig.add_subplot(gs[0, 1], **ax_colors)
+        top_n = profitable[:20]
+        if top_n:
+            labels = [f"{r.pair}" for r in top_n]
+            vals = [r.apr_pct for r in top_n]
+            y_pos = range(len(labels))
+            bars = ax2.barh(y_pos, vals, color='#00d4aa', alpha=0.85)
+            ax2.set_yticks(y_pos)
+            ax2.set_yticklabels(labels, color=text_color, fontsize=9)
+            ax2.invert_yaxis()
+            ax2.set_title('Top 20 Profitable — APR %', color=text_color, fontsize=13)
+            ax2.set_xlabel('APR %', color=text_color, fontsize=10)
+            ax2.tick_params(colors=text_color)
+            for bar, v in zip(bars, vals):
+                ax2.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+                         f'{v:.1f}%', va='center', color=text_color, fontsize=8)
+
+        # 1c: Sharpe vs APR scatter
+        ax3 = fig.add_subplot(gs[1, 0], **ax_colors)
+        for r in viable:
+            color = '#00d4aa' if r.net_pnl > 0 else '#ff4757'
+            alpha = 0.8 if r.net_pnl > 0 else 0.3
+            size = max(20, min(200, abs(r.net_pnl) / 2))
+            ax3.scatter(r.apr_pct, r.sharpe, c=color, s=size, alpha=alpha, edgecolors='none')
+        ax3.axhline(y=0, color='white', linewidth=0.3, alpha=0.3)
+        ax3.axvline(x=0, color='white', linewidth=0.3, alpha=0.3)
+        ax3.set_title('Sharpe vs APR (size = PnL)', color=text_color, fontsize=13)
+        ax3.set_xlabel('APR %', color=text_color, fontsize=10)
+        ax3.set_ylabel('Sharpe Ratio', color=text_color, fontsize=10)
+        ax3.tick_params(colors=text_color)
+
+        # 1d: Win Rate vs Positive Funding %
+        ax4 = fig.add_subplot(gs[1, 1], **ax_colors)
+        for r in viable:
+            color = '#00d4aa' if r.net_pnl > 0 else '#ff4757'
+            alpha = 0.8 if r.net_pnl > 0 else 0.3
+            ax4.scatter(r.positive_rate_pct, r.win_rate_pct, c=color, s=50, alpha=alpha, edgecolors='none')
+        ax4.set_title('Win Rate vs Positive Funding %', color=text_color, fontsize=13)
+        ax4.set_xlabel('Positive Funding Rate %', color=text_color, fontsize=10)
+        ax4.set_ylabel('Settlement Win Rate %', color=text_color, fontsize=10)
+        ax4.tick_params(colors=text_color)
+        ax4.plot([0, 100], [0, 100], '--', color='white', alpha=0.2)
+
+        overview_path = os.path.join(output_dir, f"overview_{ts}.png")
+        fig.savefig(overview_path, dpi=150, facecolor=fig.get_facecolor())
+        plt.close(fig)
+        logger.info(f"Chart saved: {overview_path}")
+
+        # ---- Chart 2: Equity Curves for Top 10 ----
+        top_equity = profitable[:10]
+        if top_equity:
+            fig2, axes = plt.subplots(
+                min(5, len(top_equity)), 2, figsize=(18, 4 * min(5, len(top_equity))),
+                facecolor='#1a1a2e'
+            )
+            fig2.suptitle('Equity Curves — Top Profitable Instruments',
+                          fontsize=18, color='white', fontweight='bold', y=1.01)
+
+            if len(top_equity) == 1:
+                axes = np.array([[axes[0], axes[1]]])
+            elif len(top_equity) <= 2:
+                axes = axes.reshape(1, -1)
+
+            for idx, r in enumerate(top_equity):
+                row = idx // 2
+                col = idx % 2
+                if row >= axes.shape[0]:
+                    break
+                ax = axes[row, col]
+                ax.set_facecolor('#16213e')
+
+                eq = np.array(r.equity_curve)
+                x = range(len(eq))
+                ax.plot(x, eq, color='#00d4aa', linewidth=1.5, alpha=0.9)
+                ax.fill_between(x, INITIAL_CAPITAL, eq,
+                                where=eq >= INITIAL_CAPITAL, color='#00d4aa', alpha=0.15)
+                ax.fill_between(x, INITIAL_CAPITAL, eq,
+                                where=eq < INITIAL_CAPITAL, color='#ff4757', alpha=0.15)
+                ax.axhline(y=INITIAL_CAPITAL, color='white', linewidth=0.5, alpha=0.3, linestyle='--')
+
+                ax.set_title(
+                    f"{r.exchange} {r.pair}  |  APR {r.apr_pct:.1f}%  |  PnL ${r.net_pnl:,.0f}",
+                    color=text_color, fontsize=10
+                )
+                ax.set_xlabel('Settlement #', color=text_color, fontsize=8)
+                ax.set_ylabel('Equity ($)', color=text_color, fontsize=8)
+                ax.tick_params(colors=text_color, labelsize=7)
+
+            # Hide unused axes
+            total_axes = axes.shape[0] * 2
+            for idx in range(len(top_equity), total_axes):
+                row, col = idx // 2, idx % 2
+                if row < axes.shape[0]:
+                    axes[row, col].set_visible(False)
+
+            equity_path = os.path.join(output_dir, f"equity_curves_{ts}.png")
+            fig2.savefig(equity_path, dpi=150, facecolor=fig2.get_facecolor(), bbox_inches='tight')
+            plt.close(fig2)
+            logger.info(f"Chart saved: {equity_path}")
+
+        # ---- Chart 3: PnL Breakdown (funding vs fees) ----
+        if profitable:
+            fig3, ax = plt.subplots(figsize=(16, 8), facecolor='#1a1a2e')
+            ax.set_facecolor('#16213e')
+
+            top_pnl = profitable[:20]
+            labels = [f"{r.pair}" for r in top_pnl]
+            funding_pnls = [r.total_funding_pnl for r in top_pnl]
+            fee_costs = [-r.total_fee_cost for r in top_pnl]
+            net_pnls = [r.net_pnl for r in top_pnl]
+
+            x = np.arange(len(labels))
+            width = 0.25
+
+            ax.bar(x - width, funding_pnls, width, label='Funding PnL', color='#00d4aa', alpha=0.85)
+            ax.bar(x, fee_costs, width, label='Fees (cost)', color='#ff4757', alpha=0.85)
+            ax.bar(x + width, net_pnls, width, label='Net PnL', color='#ffd700', alpha=0.85)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=45, ha='right', color=text_color, fontsize=9)
+            ax.set_ylabel('USD ($)', color=text_color, fontsize=11)
+            ax.set_title('PnL Breakdown — Funding Revenue vs Fees', color=text_color, fontsize=14)
+            ax.legend(facecolor='#16213e', edgecolor='#333', labelcolor=text_color)
+            ax.axhline(y=0, color='white', linewidth=0.3, alpha=0.3)
+            ax.tick_params(colors=text_color)
+
+            pnl_path = os.path.join(output_dir, f"pnl_breakdown_{ts}.png")
+            fig3.savefig(pnl_path, dpi=150, facecolor=fig3.get_facecolor(), bbox_inches='tight')
+            plt.close(fig3)
+            logger.info(f"Chart saved: {pnl_path}")
+
+        return output_dir
+
 
     async def bulk_load_data(
         self, instrument_ids: List[str], interval: str = "4h"
@@ -431,6 +692,15 @@ async def run_backtest(exchange: Optional[str] = None, symbol: Optional[str] = N
         results.append(result)
 
     bt.print_report(results, exchange)
+
+    # Save results + generate charts
+    output_dir = os.path.join(
+        os.path.dirname(__file__), 'output',
+        exchange.lower() if exchange else 'all',
+    )
+    bt.save_results(results, output_dir)
+    bt.generate_charts(results, output_dir)
+
     await db.close()
 
 
@@ -439,6 +709,7 @@ def main():
     parser.add_argument("--exchange", type=str, default=None, help="Filter by exchange (OKX, BINANCEFUTURES)")
     parser.add_argument("--symbol", type=str, default=None, help="Single symbol to test")
     parser.add_argument("--top", type=int, default=0, help="Show top N only")
+    parser.add_argument("--output", type=str, default=None, help="Output directory")
     args = parser.parse_args()
     asyncio.run(run_backtest(exchange=args.exchange, symbol=args.symbol, top=args.top))
 
