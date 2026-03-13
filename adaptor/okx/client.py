@@ -168,6 +168,76 @@ class OKXClient:
         params = {"instId": inst_id}
         return self._request("GET", endpoint, params=params)
     
+    def get_klines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get candlestick/kline data for an instrument.
+
+        Args:
+            inst_id: Instrument ID (e.g., "BTC-USDT-SWAP")
+            bar: Bar size - "1m","5m","15m","1H","4H","1D","1W" etc.
+            limit: Number of results (max 100)
+            before: Return results before this timestamp (ms) — pagination older
+            after: Return results after this timestamp (ms) — pagination newer
+        """
+        endpoint = "/api/v5/market/candles"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
+        if before:
+            params["before"] = before
+        if after:
+            params["after"] = after
+        return self._request("GET", endpoint, params=params)
+
+    def getKlines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse klines, returning standardized dicts."""
+        raw = self.get_klines(inst_id=inst_id, bar=bar, limit=limit, before=before, after=after)
+        return self._parser.parse_klines(raw)
+
+    def get_history_klines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get HISTORY candlestick data (older than what /candles returns).
+        OKX /market/history-candles goes further back.
+        """
+        endpoint = "/api/v5/market/history-candles"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
+        if before:
+            params["before"] = before
+        if after:
+            params["after"] = after
+        return self._request("GET", endpoint, params=params)
+
+    def getHistoryKlines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse history klines."""
+        raw = self.get_history_klines(inst_id=inst_id, bar=bar, limit=limit, before=before, after=after)
+        return self._parser.parse_klines(raw)
+
     def get_funding_rate_history(
         self,
         inst_id: str,
@@ -350,6 +420,64 @@ class AsyncOKXClient:
         params = {"instId": inst_id}
         return await self._request("GET", endpoint, params=params)
     
+    async def get_klines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get candlestick/kline data."""
+        endpoint = "/api/v5/market/candles"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
+        if before:
+            params["before"] = before
+        if after:
+            params["after"] = after
+        return await self._request("GET", endpoint, params=params)
+
+    async def getKlines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse klines."""
+        raw = await self.get_klines(inst_id=inst_id, bar=bar, limit=limit, before=before, after=after)
+        return self._parser.parse_klines(raw)
+
+    async def get_history_klines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get HISTORY candlestick data (further back)."""
+        endpoint = "/api/v5/market/history-candles"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
+        if before:
+            params["before"] = before
+        if after:
+            params["after"] = after
+        return await self._request("GET", endpoint, params=params)
+
+    async def getHistoryKlines(
+        self,
+        inst_id: str,
+        bar: str = "4H",
+        limit: int = 100,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse history klines."""
+        raw = await self.get_history_klines(inst_id=inst_id, bar=bar, limit=limit, before=before, after=after)
+        return self._parser.parse_klines(raw)
+
     async def get_funding_rate_history(
         self,
         inst_id: str,

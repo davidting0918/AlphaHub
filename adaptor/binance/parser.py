@@ -145,6 +145,34 @@ class BinanceParser:
             return []
         return [self.parse_funding_rate(item) for item in raw_data]
 
+    # ==================== Futures Kline Parsing ====================
+
+    def parse_futures_kline(self, raw: List[Any]) -> Dict[str, Any]:
+        """
+        Parse a single Binance Futures kline.
+
+        Binance kline array format:
+        [openTime, open, high, low, close, volume, closeTime,
+         quoteAssetVolume, numberOfTrades, takerBuyBaseVol, takerBuyQuoteVol, ignore]
+        """
+        return {
+            'open_time': self.ms_to_datetime(raw[0]),
+            'open': self.as_type(raw[1], float, 0.0),
+            'high': self.as_type(raw[2], float, 0.0),
+            'low': self.as_type(raw[3], float, 0.0),
+            'close': self.as_type(raw[4], float, 0.0),
+            'volume': self.as_type(raw[5], float, 0.0),
+            'close_time': self.ms_to_datetime(raw[6]),
+            'quote_volume': self.as_type(raw[7], float, 0.0),
+            'trade_count': self.as_type(raw[8], int, 0),
+        }
+
+    def parse_futures_klines(self, raw_data: List[List[Any]]) -> List[Dict[str, Any]]:
+        """Parse Binance Futures klines response (returns list of arrays)."""
+        if not raw_data:
+            return []
+        return [self.parse_futures_kline(item) for item in raw_data]
+
     # ==================== Alpha Parsing ====================
 
     def parse_token_list(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:

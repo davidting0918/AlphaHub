@@ -69,6 +69,26 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     UNIQUE(instrument_id, funding_time)
 );
 
+-- Kline / candlestick data (all intervals in one table)
+CREATE TABLE IF NOT EXISTS klines (
+    id              SERIAL PRIMARY KEY,
+    exchange_id     INT NOT NULL REFERENCES exchanges(id),
+    instrument_id   VARCHAR(100) NOT NULL REFERENCES instruments(instrument_id),
+    interval        VARCHAR(10) NOT NULL,            -- '1m','5m','15m','1h','4h','1d','1w'
+    open_time       TIMESTAMPTZ NOT NULL,            -- candle open timestamp
+    close_time      TIMESTAMPTZ NOT NULL,            -- candle close timestamp
+    open            DECIMAL NOT NULL,
+    high            DECIMAL NOT NULL,
+    low             DECIMAL NOT NULL,
+    close           DECIMAL NOT NULL,
+    volume          DECIMAL NOT NULL DEFAULT 0,      -- base asset volume
+    quote_volume    DECIMAL NOT NULL DEFAULT 0,      -- quote asset volume
+    trade_count     INT DEFAULT 0,                   -- number of trades
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(instrument_id, interval, open_time)
+);
+
 -- ============================================================
 -- INDEXES
 -- ============================================================
@@ -93,3 +113,8 @@ CREATE INDEX IF NOT EXISTS idx_portfolios_status ON portfolios(status);
 CREATE INDEX idx_funding_rates_instrument_time ON funding_rates(instrument_id, funding_time DESC);
 CREATE INDEX idx_funding_rates_exchange ON funding_rates(exchange_id);
 CREATE INDEX idx_funding_rates_time ON funding_rates(funding_time DESC);
+
+-- Klines
+CREATE INDEX idx_klines_lookup ON klines(instrument_id, interval, open_time DESC);
+CREATE INDEX idx_klines_exchange ON klines(exchange_id);
+CREATE INDEX idx_klines_time ON klines(interval, open_time DESC);

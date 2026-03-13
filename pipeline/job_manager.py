@@ -11,7 +11,7 @@ import argparse
 import logging
 from datetime import datetime, timezone
 
-from pipeline.jobs import InstrumentJob, FundingRateJob
+from pipeline.jobs import InstrumentJob, FundingRateJob, KlineJob
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 JOB_REGISTRY = {
     "instrument": InstrumentJob,
     "funding_rate": FundingRateJob,
+    "kline": KlineJob,
 }
 
 

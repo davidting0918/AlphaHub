@@ -178,3 +178,32 @@ class OKXParser:
             return []
         
         return [self.parse_funding_rate(item) for item in data]
+
+    # ==================== Kline Parsing ====================
+
+    def parse_kline(self, raw: List[Any]) -> Dict[str, Any]:
+        """
+        Parse a single OKX candlestick.
+
+        OKX kline array format:
+        [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
+        - ts: opening time in ms
+        - confirm: "0" = incomplete, "1" = complete
+        """
+        return {
+            'open_time': self.ms_to_datetime(raw[0]),
+            'open': self.as_type(raw[1], float, 0.0),
+            'high': self.as_type(raw[2], float, 0.0),
+            'low': self.as_type(raw[3], float, 0.0),
+            'close': self.as_type(raw[4], float, 0.0),
+            'volume': self.as_type(raw[5], float, 0.0),
+            'quote_volume': self.as_type(raw[7], float, 0.0) if len(raw) > 7 else 0.0,
+            'confirm': raw[8] == '1' if len(raw) > 8 else True,
+        }
+
+    def parse_klines(self, raw_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Parse klines/candlestick response from OKX."""
+        data = raw_data.get('data', [])
+        if not data:
+            return []
+        return [self.parse_kline(item) for item in data]

@@ -186,6 +186,60 @@ class BinanceClient:
         except requests.exceptions.RequestException as e:
             raise BinanceClientError(f"Request failed: {str(e)}")
 
+    # Futures Kline Methods
+
+    def get_futures_klines(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: int = 1500,
+    ) -> List[List[Any]]:
+        """
+        Get Futures kline/candlestick data.
+        Endpoint: GET /fapi/v1/klines
+
+        Args:
+            symbol: e.g. "BTCUSDT"
+            interval: "1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"
+            start_time: Start timestamp in ms
+            end_time: End timestamp in ms
+            limit: Max 1500
+        """
+        url = f"{self.FUTURES_BASE_URL}/fapi/v1/klines"
+        params: Dict[str, Any] = {"symbol": symbol, "interval": interval, "limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            response = self._session.request(
+                method="GET", url=url, params=params, timeout=self.timeout
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except requests.exceptions.RequestException as e:
+            raise BinanceClientError(f"Request failed: {str(e)}")
+
+    def getKlines(
+        self,
+        inst_id: str,
+        interval: str = "4h",
+        limit: int = 1500,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse Futures klines."""
+        raw = self.get_futures_klines(
+            symbol=inst_id, interval=interval,
+            start_time=start_time, end_time=end_time, limit=limit,
+        )
+        return self._parser.parse_futures_klines(raw)
+
     # High-level methods that return parsed/standardized data
 
     def getFundingRates(
@@ -422,6 +476,53 @@ class AsyncBinanceClient:
             end_time=end_time, limit=limit,
         )
         return self._parser.parse_funding_rates(raw)
+
+    # Futures Kline Methods
+
+    async def get_futures_klines(
+        self,
+        symbol: str,
+        interval: str = "4h",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: int = 1500,
+    ) -> List:
+        """Get Futures kline data."""
+        if not self._client:
+            raise BinanceClientError("Client not initialized.")
+        params: Dict[str, Any] = {"symbol": symbol, "interval": interval, "limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            response = await self._client.request(
+                method="GET",
+                url=self.FUTURES_BASE_URL + "/fapi/v1/klines",
+                params=params,
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except httpx.HTTPError as e:
+            raise BinanceClientError(f"HTTP error: {str(e)}")
+
+    async def getKlines(
+        self,
+        inst_id: str,
+        interval: str = "4h",
+        limit: int = 1500,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse Futures klines."""
+        raw = await self.get_futures_klines(
+            symbol=inst_id, interval=interval,
+            start_time=start_time, end_time=end_time, limit=limit,
+        )
+        return self._parser.parse_futures_klines(raw)
 
     # High-level methods
 
