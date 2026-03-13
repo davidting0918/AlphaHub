@@ -9,7 +9,7 @@ import logging
 from typing import Optional, Dict, Any, List
 
 from .client import BinanceClient, AsyncBinanceClient
-from .parser import BinanceAlphaParser
+from .parser import BinanceParser
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class BinanceAlpha:
             timeout=timeout,
             max_retries=max_retries
         )
-        self._parser = BinanceAlphaParser()
+        self._parser = BinanceParser()
     
     def close(self):
         self._client.close()
@@ -70,7 +70,7 @@ class AsyncBinanceAlpha:
             max_retries=max_retries,
             max_connections=max_connections
         )
-        self._parser = BinanceAlphaParser()
+        self._parser = BinanceParser()
         self._client_context = None
     
     async def __aenter__(self):

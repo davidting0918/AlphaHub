@@ -149,7 +149,66 @@ class BinanceClient:
         except requests.exceptions.RequestException as e:
             raise BinanceClientError(f"Request failed: {str(e)}")
 
+    # Futures Funding Rate Methods
+
+    def get_funding_rate_history(
+        self,
+        symbol: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get funding rate history for a symbol.
+        Endpoint: GET /fapi/v1/fundingRate
+        
+        Args:
+            symbol: e.g. "BTCUSDT"
+            start_time: Start timestamp in ms
+            end_time: End timestamp in ms
+            limit: Max 1000
+        """
+        url = f"{self.FUTURES_BASE_URL}/fapi/v1/fundingRate"
+        params: Dict[str, Any] = {"symbol": symbol, "limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            response = self._session.request(
+                method="GET", url=url, params=params, timeout=self.timeout
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data  # Returns a list directly
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except requests.exceptions.RequestException as e:
+            raise BinanceClientError(f"Request failed: {str(e)}")
+
     # High-level methods that return parsed/standardized data
+
+    def getFundingRates(
+        self,
+        inst_id: str,
+        limit: int = 1000,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get and parse funding rate history, returning standardized dicts.
+        
+        Args:
+            inst_id: Symbol (e.g. "BTCUSDT")
+            limit: Max results per page (up to 1000)
+            start_time: Start timestamp in ms
+            end_time: End timestamp in ms
+        """
+        raw = self.get_funding_rate_history(
+            symbol=inst_id, start_time=start_time,
+            end_time=end_time, limit=limit,
+        )
+        return self._parser.parse_funding_rates(raw)
 
     def getInstruments(self) -> List[Dict[str, Any]]:
         """
@@ -318,6 +377,51 @@ class AsyncBinanceClient:
             raise BinanceAPIError(response.status_code, error_msg, response_data)
         except httpx.HTTPError as e:
             raise BinanceClientError(f"HTTP error: {str(e)}")
+
+    # Futures Funding Rate Methods
+
+    async def get_funding_rate_history(
+        self,
+        symbol: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """Get funding rate history for a symbol."""
+        if not self._client:
+            raise BinanceClientError("Client not initialized.")
+        params: Dict[str, Any] = {"symbol": symbol, "limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        try:
+            response = await self._client.request(
+                method="GET",
+                url=self.FUTURES_BASE_URL + "/fapi/v1/fundingRate",
+                params=params,
+            )
+            response_data = response.json()
+            if response.status_code == 200:
+                return response_data
+            error_msg = response_data.get('msg', 'Unknown error')
+            raise BinanceAPIError(response.status_code, error_msg, response_data)
+        except httpx.HTTPError as e:
+            raise BinanceClientError(f"HTTP error: {str(e)}")
+
+    async def getFundingRates(
+        self,
+        inst_id: str,
+        limit: int = 1000,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get and parse funding rate history."""
+        raw = await self.get_funding_rate_history(
+            symbol=inst_id, start_time=start_time,
+            end_time=end_time, limit=limit,
+        )
+        return self._parser.parse_funding_rates(raw)
 
     # High-level methods
 
