@@ -1,0 +1,6 @@
+Strategy,Total PnL ($),Total PnL (%),Trades,Win Rate (%),Sharpe,Max DD (%),Profit Factor
+multi_tf_trend,0.0,0.0,0,0.0,0.0,0.0,N/A
+ema_cross_rsi,-120.4,-1.2,34,8.8,-34.49,1.2,0.1
+volume_profile,-153.66,-1.54,8,12.5,-56.48,1.5,0.05
+breakout_momentum,-307.13,-3.07,47,25.5,-17.4,3.2,0.35
+vwap_deviation,-20800.03,-208.0,10923,1.9,-102.84,208.0,0.01

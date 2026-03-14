@@ -40,13 +40,13 @@ class TradingEngine:
         await engine.run(strategies=["breakout", "ema_cross"])
     """
     
-    # Strategy intervals (seconds) — aggressive for testnet
+    # Strategy intervals (seconds) — fast for testnet
     STRATEGY_INTERVALS = {
-        "breakout_momentum": 300,        # 1H candles -> check every 5 min
-        "ema_cross_rsi": 120,            # 15m candles -> check every 2 min
-        "vwap_deviation": 60,            # 5m candles -> check every 1 min
-        "multi_tf_trend": 120,           # 15m entry TF -> check every 2 min
-        "volume_profile": 300,           # 1H candles -> check every 5 min
+        "breakout_momentum": 60,         # check every 1 min
+        "ema_cross_rsi": 30,             # check every 30s
+        "vwap_deviation": 30,            # check every 30s
+        "multi_tf_trend": 60,            # check every 1 min
+        "volume_profile": 60,            # check every 1 min
     }
     
     def __init__(self):
@@ -123,7 +123,7 @@ class TradingEngine:
         try:
             while self.running:
                 await self._run_cycle()
-                await asyncio.sleep(30)  # Main loop interval
+                await asyncio.sleep(15)  # Main loop interval
                 
         except asyncio.CancelledError:
             logger.info("Engine cancelled")
@@ -264,9 +264,11 @@ class TradingEngine:
             inst_info = self.trader.get_instrument_info(instrument)
             contract_value = inst_info.get("contract_value", 1)
             min_size = inst_info.get("min_size", 1)
+            lot_size = inst_info.get("lot_size", min_size)
         except:
             contract_value = 1
             min_size = 1
+            lot_size = 1
         
         # Calculate position size
         entry_price = signal.entry_price or self.trader.get_ticker(instrument).get("last_price", 0)
@@ -278,6 +280,11 @@ class TradingEngine:
             signal_size_pct=signal.size_pct,
             contract_value=contract_value
         )
+        
+        # Round to lot size
+        if lot_size > 0:
+            size = round(size / lot_size) * lot_size
+            size = round(size, 10)  # avoid float precision issues
         
         if size < min_size:
             logger.info(f"Position size {size} below minimum {min_size}, skipping")

@@ -47,7 +47,7 @@ async def run_engine(strategies=None):
     await engine.run(strategies)
 
 
-async def run_full():
+async def run_full(strategies=None):
     """Run engine + bot commands concurrently."""
     from projects.momentum_perp.bot_commands import BotCommandHandler
     
@@ -55,7 +55,7 @@ async def run_full():
     bot = BotCommandHandler()
     
     await asyncio.gather(
-        engine.run(),
+        engine.run(strategies),
         bot.run(),
     )
 
@@ -261,7 +261,8 @@ def main():
         if args.bot:
             asyncio.run(run_bot())
         elif args.full:
-            asyncio.run(run_full())
+            strategies = [args.strategy] if args.strategy else None
+            asyncio.run(run_full(strategies))
         elif args.test:
             asyncio.run(run_tests())
         elif args.migrate:

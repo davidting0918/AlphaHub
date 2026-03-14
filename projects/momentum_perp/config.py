@@ -56,12 +56,25 @@ class TradingConfig:
     
     def __post_init__(self):
         if self.instruments is None:
+            # 17 USDT perps (verified on OKX demo/testnet)
             self.instruments = [
                 "BTC-USDT-SWAP",
                 "ETH-USDT-SWAP",
                 "SOL-USDT-SWAP",
-                "DOGE-USDT-SWAP",
                 "XRP-USDT-SWAP",
+                "DOGE-USDT-SWAP",
+                "ADA-USDT-SWAP",
+                "AVAX-USDT-SWAP",
+                "LINK-USDT-SWAP",
+                "DOT-USDT-SWAP",
+                "ARB-USDT-SWAP",
+                "OP-USDT-SWAP",
+                "NEAR-USDT-SWAP",
+                "SUI-USDT-SWAP",
+                "PEPE-USDT-SWAP",
+                "INJ-USDT-SWAP",
+                "AAVE-USDT-SWAP",
+                "FIL-USDT-SWAP",
             ]
 
 
