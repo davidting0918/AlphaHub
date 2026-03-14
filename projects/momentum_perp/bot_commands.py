@@ -379,8 +379,20 @@ generate_report()
 
     # ==================== Main Loop ====================
 
+    async def _flush_old_updates(self):
+        """Flush any pending updates on startup so we don't re-process old commands."""
+        try:
+            resp = await self.client.get(f"{BASE_URL}/getUpdates", params={"offset": -1, "limit": 1})
+            data = resp.json()
+            if data.get("ok") and data.get("result"):
+                self.last_update_id = data["result"][-1]["update_id"]
+                logger.info(f"Flushed old updates, starting from {self.last_update_id}")
+        except Exception as e:
+            logger.error(f"Flush failed: {e}")
+
     async def run(self):
         """Poll for commands."""
+        await self._flush_old_updates()
         logger.info("Bot command handler started")
         await self.send("🤖 <b>Bot Command Handler Active</b>\nType /help for commands.")
 
