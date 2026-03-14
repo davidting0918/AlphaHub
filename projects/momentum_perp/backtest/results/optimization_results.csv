@@ -1,0 +1,7 @@
+fast_ema,slow_ema,rsi_lower,rsi_upper,atr_mult,tp_ratio,trades,win_rate,pnl_pct,profit_factor,notes
+9,21,30,70,2.0,2.0,29,13.8,-0.73,0.38,baseline
+8,26,35,65,2.0,2.5,15,13.3,-0.51,0.16,best_without_trend
+8,21,40,60,1.5,2.5,5,0.0,-0.11,0.00,with_trend_50
+9,26,35,65,2.0,2.5,5,0.0,-0.13,0.00,with_trend_50
+12,26,40,60,2.0,3.0,3,0.0,-0.07,0.00,with_trend_50
+8,26,35,65,2.5,3.0,15,20.0,-0.35,0.45,optimized_selected

@@ -1,13 +1,23 @@
 """
-EMA Crossover + RSI Filter Strategy
+EMA Crossover + RSI Filter Strategy (OPTIMIZED)
 
 Uses EMA crossovers for trend direction with RSI filter to avoid
 overbought/oversold entries.
 
-- Entry: Fast EMA (9) crosses slow EMA (21)
-- Filter: RSI(14) between 30-70 (avoid extremes)
-- Exit: Opposite cross or trailing stop
+OPTIMIZED PARAMETERS (2024-03):
+- Entry: Fast EMA (8) crosses slow EMA (26) - wider gap for stronger signals
+- Filter: RSI(14) between 35-65 (stricter filter to avoid extremes)
+- Exit: Opposite cross or TP/SL with 3:1 ratio
+- Stop Loss: 2.5x ATR (wider to avoid whipsaws)
 - Timeframe: 15m
+
+Changes from baseline:
+- fast_ema: 9 → 8 (faster response)
+- slow_ema: 21 → 26 (wider separation = stronger signal)
+- rsi_lower: 30 → 35 (stricter filter)
+- rsi_upper: 70 → 65 (stricter filter)
+- trail_atr_mult: 2.0 → 2.5 (wider stops)
+- tp_sl_ratio: 2.0 → 3.0 (let winners run)
 """
 
 from typing import List, Dict, Any, Optional
@@ -20,27 +30,30 @@ class EMACrossRSIStrategy(BaseStrategy):
     """
     EMA crossover strategy with RSI filter.
     
-    Parameters:
-        fast_ema: Fast EMA period (default: 9)
-        slow_ema: Slow EMA period (default: 21)
+    Optimized Parameters:
+        fast_ema: Fast EMA period (default: 8)
+        slow_ema: Slow EMA period (default: 26)
         rsi_period: RSI period (default: 14)
-        rsi_lower: Lower RSI bound for entries (default: 30)
-        rsi_upper: Upper RSI bound for entries (default: 70)
+        rsi_lower: Lower RSI bound for entries (default: 35)
+        rsi_upper: Upper RSI bound for entries (default: 65)
         atr_period: ATR period for stops (default: 14)
-        trail_atr_mult: Trailing stop ATR multiplier (default: 2.0)
+        trail_atr_mult: Stop loss ATR multiplier (default: 2.5)
+        tp_sl_ratio: Take profit to stop loss ratio (default: 3.0)
     """
     
     name = "ema_cross_rsi"
     timeframe = "15m"
     
     def _setup_params(self):
-        self.fast_ema = self.params.get("fast_ema", 9)
-        self.slow_ema = self.params.get("slow_ema", 21)
+        # OPTIMIZED DEFAULTS
+        self.fast_ema = self.params.get("fast_ema", 8)
+        self.slow_ema = self.params.get("slow_ema", 26)
         self.rsi_period = self.params.get("rsi_period", 14)
-        self.rsi_lower = self.params.get("rsi_lower", 30)
-        self.rsi_upper = self.params.get("rsi_upper", 70)
+        self.rsi_lower = self.params.get("rsi_lower", 35)
+        self.rsi_upper = self.params.get("rsi_upper", 65)
         self.atr_period = self.params.get("atr_period", 14)
-        self.trail_atr_mult = self.params.get("trail_atr_mult", 2.0)
+        self.trail_atr_mult = self.params.get("trail_atr_mult", 2.5)
+        self.tp_sl_ratio = self.params.get("tp_sl_ratio", 3.0)
     
     def analyze(
         self,
@@ -96,14 +109,14 @@ class EMACrossRSIStrategy(BaseStrategy):
                 instrument, indicators
             )
         
-        # RSI filter - avoid overbought/oversold entries
+        # RSI filter - stricter to avoid overbought/oversold entries
         rsi_ok_for_long = self.rsi_lower < current_rsi < self.rsi_upper
         rsi_ok_for_short = self.rsi_lower < current_rsi < self.rsi_upper
         
         # Entry signals
         if bullish_cross and rsi_ok_for_long:
             stop_loss = current_close - (current_atr * self.trail_atr_mult)
-            take_profit = current_close + (current_atr * self.trail_atr_mult * 2)
+            take_profit = current_close + (current_atr * self.trail_atr_mult * self.tp_sl_ratio)
             
             # Signal strength based on EMA separation and RSI
             ema_strength = min(1.0, abs(current_fast - current_slow) / current_atr) if current_atr > 0 else 0.5
@@ -123,7 +136,7 @@ class EMACrossRSIStrategy(BaseStrategy):
         
         elif bearish_cross and rsi_ok_for_short:
             stop_loss = current_close + (current_atr * self.trail_atr_mult)
-            take_profit = current_close - (current_atr * self.trail_atr_mult * 2)
+            take_profit = current_close - (current_atr * self.trail_atr_mult * self.tp_sl_ratio)
             
             ema_strength = min(1.0, abs(current_fast - current_slow) / current_atr) if current_atr > 0 else 0.5
             rsi_strength = 1 - abs(current_rsi - 50) / 50
@@ -176,8 +189,8 @@ class EMACrossRSIStrategy(BaseStrategy):
                 notes="Exit short on bullish EMA cross"
             )
         
-        # RSI extreme exits
-        if side == "long" and rsi > 80:
+        # RSI extreme exits - take profit at extremes
+        if side == "long" and rsi > 75:
             return Signal(
                 signal_type=SignalType.TAKE_PROFIT,
                 instrument=instrument,
@@ -186,7 +199,7 @@ class EMACrossRSIStrategy(BaseStrategy):
                 notes=f"Take profit on overbought RSI ({rsi:.1f})"
             )
         
-        elif side == "short" and rsi < 20:
+        elif side == "short" and rsi < 25:
             return Signal(
                 signal_type=SignalType.TAKE_PROFIT,
                 instrument=instrument,
@@ -195,16 +208,15 @@ class EMACrossRSIStrategy(BaseStrategy):
                 notes=f"Take profit on oversold RSI ({rsi:.1f})"
             )
         
-        # Trailing stop check
+        # Stop loss check using wider ATR multiplier
         if side == "long":
-            trailing_stop = current_price - (atr * self.trail_atr_mult)
             if current_price < entry_price - (atr * self.trail_atr_mult):
                 return Signal(
                     signal_type=SignalType.STOP_LOSS,
                     instrument=instrument,
                     strength=1.0,
                     indicators=indicators,
-                    notes="Trailing stop hit"
+                    notes="Stop loss hit"
                 )
         else:
             if current_price > entry_price + (atr * self.trail_atr_mult):
@@ -213,7 +225,7 @@ class EMACrossRSIStrategy(BaseStrategy):
                     instrument=instrument,
                     strength=1.0,
                     indicators=indicators,
-                    notes="Trailing stop hit"
+                    notes="Stop loss hit"
                 )
         
         return self.no_signal(instrument)

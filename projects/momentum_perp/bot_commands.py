@@ -229,25 +229,81 @@ class BotCommandHandler:
         await self.send("\n".join(lines))
 
     async def cmd_positions(self, _=""):
-        from .okx_trader import OKXTrader
-        trader = OKXTrader()
-        positions = trader.get_positions()
-
-        if not positions:
+        import okx.Account as OkxAccount
+        from .config import okx_config
+        
+        acc = OkxAccount.AccountAPI(
+            okx_config.api_key, okx_config.secret_key, okx_config.passphrase,
+            False, okx_config.demo_flag
+        )
+        result = acc.get_positions(instType="SWAP")
+        
+        if result.get("code") != "0":
+            await self.send(f"❌ Error: {result.get('msg')}")
+            return
+        
+        open_pos = [p for p in result["data"] if float(p.get("pos", "0")) != 0]
+        
+        if not open_pos:
             await self.send("📊 No open positions.")
             return
-
-        lines = ["📊 <b>Open Positions</b>\n"]
-        for p in positions:
-            side_emoji = "🟢" if p.get('side') == 'long' else "🔴"
-            inst = p['instrument'].replace('-USDT-SWAP', '')
-            upl = p.get('unrealized_pnl', 0)
+        
+        total_upl = 0
+        total_notional = 0
+        lines = [f"📊 <b>Open Positions</b> ({len(open_pos)})\n"]
+        
+        for p in open_pos:
+            pos = float(p.get("pos", "0"))
+            side = "LONG" if pos > 0 else "SHORT"
+            side_emoji = "🟢" if pos > 0 else "🔴"
+            inst = p["instId"].replace("-USDT-SWAP", "")
+            entry = float(p.get("avgPx", "0"))
+            mark = float(p.get("markPx", "0"))
+            last = float(p.get("last", "0"))
+            upl = float(p.get("upl", "0"))
+            upl_pct = float(p.get("uplRatio", "0")) * 100
+            notional = float(p.get("notionalUsd", "0"))
+            fee = float(p.get("fee", "0"))
+            leverage = notional / float(p.get("imr", "1")) if float(p.get("imr", "0")) > 0 else 0
+            margin = float(p.get("imr", "0"))
+            
+            # Duration
+            ctime = int(p.get("cTime", "0"))
+            if ctime:
+                opened = datetime.fromtimestamp(ctime / 1000, tz=timezone.utc)
+                duration = datetime.now(timezone.utc) - opened
+                hours = duration.total_seconds() / 3600
+                if hours < 1:
+                    dur_str = f"{int(duration.total_seconds() / 60)}m"
+                elif hours < 24:
+                    dur_str = f"{hours:.1f}h"
+                else:
+                    dur_str = f"{hours / 24:.1f}d"
+            else:
+                dur_str = "?"
+            
+            total_upl += upl
+            total_notional += notional
+            
+            pnl_emoji = "📈" if upl >= 0 else "📉"
+            
             lines.append(
-                f"{side_emoji} <b>{inst}</b> {p.get('side','?').upper()} "
-                f"| Size: {p.get('size', 0)} | Entry: ${p.get('avg_entry_price', 0):.4f} "
-                f"| UPnL: <code>${upl:+.2f}</code>"
+                f"{side_emoji} <b>{inst}</b> {side}\n"
+                f"   📏 Size: <code>{abs(pos)}</code> contracts\n"
+                f"   💵 Entry: <code>${entry:,.4f}</code>\n"
+                f"   📍 Mark: <code>${mark:,.4f}</code>  Last: <code>${last:,.4f}</code>\n"
+                f"   {pnl_emoji} UPnL: <code>${upl:+,.2f}</code> (<code>{upl_pct:+.2f}%</code>)\n"
+                f"   💰 Notional: <code>${notional:,.2f}</code>  Margin: <code>${margin:,.2f}</code>\n"
+                f"   ⚡ Lev: <code>{leverage:.1f}x</code>  Fee: <code>${fee:,.2f}</code>\n"
+                f"   ⏱ Open: <code>{dur_str}</code> ago\n"
             )
-
+        
+        upl_emoji = "📈" if total_upl >= 0 else "📉"
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"{upl_emoji} <b>Total UPnL:</b> <code>${total_upl:+,.2f}</code>")
+        lines.append(f"💰 <b>Total Notional:</b> <code>${total_notional:,.2f}</code>")
+        lines.append(f"\n🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")
+        
         await self.send("\n".join(lines))
 
     async def cmd_pnl(self, _=""):
