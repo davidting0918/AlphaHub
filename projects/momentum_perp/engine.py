@@ -162,8 +162,9 @@ class TradingEngine:
     
     async def _run_strategy(self, name: str, strategy: BaseStrategy):
         """Run a single strategy."""
-        logger.debug(f"Running strategy: {name}")
+        logger.info(f"Scanning: {name} ({strategy.timeframe})")
         
+        signals_found = []
         for instrument in trading_config.instruments:
             try:
                 # Get klines
@@ -200,10 +201,16 @@ class TradingEngine:
                 
                 # Process signal
                 if signal.signal_type != SignalType.NO_ACTION:
+                    signals_found.append(f"{instrument}={signal.signal_type.value}({signal.strength:.2f})")
                     await self._process_signal(name, instrument, signal, current_position)
                     
             except Exception as e:
                 logger.error(f"Error in {name} for {instrument}: {e}")
+        
+        if signals_found:
+            logger.info(f"  → Signals: {', '.join(signals_found)}")
+        else:
+            logger.info(f"  → No signals")
     
     async def _process_signal(
         self,
@@ -224,6 +231,18 @@ class TradingEngine:
             "indicators": signal.indicators,
             "notes": signal.notes,
         })
+        
+        # Alert via Telegram
+        try:
+            await self.reporter.send_signal_alert(
+                instrument=instrument,
+                signal_type=signal.signal_type.value,
+                strategy=strategy_name,
+                strength=signal.strength,
+                notes=signal.notes,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send signal alert: {e}")
         
         # Entry signals
         if signal.is_entry:
@@ -292,8 +311,11 @@ class TradingEngine:
         
         # Place order
         try:
-            # Set leverage first
-            self.trader.set_leverage(instrument, trading_config.default_leverage)
+            # Set leverage (skip for PM accounts which manage leverage differently)
+            try:
+                self.trader.set_leverage(instrument, trading_config.default_leverage)
+            except Exception as lev_err:
+                logger.warning(f"Leverage set skipped ({lev_err}), proceeding with default")
             
             # Place market order
             order_result = self.trader.place_market_order(

@@ -31,10 +31,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler(),
         logging.FileHandler("momentum_perp.log"),
     ]
 )
+# Add console only if running interactively
+if sys.stdout.isatty():
+    logging.getLogger().addHandler(logging.StreamHandler())
 logger = logging.getLogger(__name__)
 
 
