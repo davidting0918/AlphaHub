@@ -25,6 +25,7 @@ from projects.momentum_perp.db_manager import run_migrations
 from projects.momentum_perp.okx_trader import OKXTrader
 from projects.momentum_perp.reporter import send_test_message
 from projects.momentum_perp.config import trading_config
+from projects.momentum_perp.bot_commands import run_bot
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +45,19 @@ async def run_engine(strategies=None):
     """Run the trading engine."""
     engine = TradingEngine()
     await engine.run(strategies)
+
+
+async def run_full():
+    """Run engine + bot commands concurrently."""
+    from projects.momentum_perp.bot_commands import BotCommandHandler
+    
+    engine = TradingEngine()
+    bot = BotCommandHandler()
+    
+    await asyncio.gather(
+        engine.run(),
+        bot.run(),
+    )
 
 
 async def send_report():
@@ -230,11 +244,25 @@ def main():
         action="store_true",
         help="Run strategies once and exit"
     )
+    parser.add_argument(
+        "--bot",
+        action="store_true",
+        help="Run Telegram bot command handler"
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Run engine + bot commands together"
+    )
     
     args = parser.parse_args()
     
     try:
-        if args.test:
+        if args.bot:
+            asyncio.run(run_bot())
+        elif args.full:
+            asyncio.run(run_full())
+        elif args.test:
             asyncio.run(run_tests())
         elif args.migrate:
             asyncio.run(migrate())

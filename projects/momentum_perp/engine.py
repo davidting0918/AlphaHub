@@ -40,13 +40,13 @@ class TradingEngine:
         await engine.run(strategies=["breakout", "ema_cross"])
     """
     
-    # Strategy intervals (seconds)
+    # Strategy intervals (seconds) — aggressive for testnet
     STRATEGY_INTERVALS = {
-        "breakout_momentum": 3600,       # 1H candles -> check every hour
-        "ema_cross_rsi": 900,            # 15m candles -> check every 15 min
-        "vwap_deviation": 300,           # 5m candles -> check every 5 min
-        "multi_tf_trend": 900,           # 15m entry TF -> check every 15 min
-        "volume_profile": 3600,          # 1H candles -> check every hour
+        "breakout_momentum": 300,        # 1H candles -> check every 5 min
+        "ema_cross_rsi": 120,            # 15m candles -> check every 2 min
+        "vwap_deviation": 60,            # 5m candles -> check every 1 min
+        "multi_tf_trend": 120,           # 15m entry TF -> check every 2 min
+        "volume_profile": 300,           # 1H candles -> check every 5 min
     }
     
     def __init__(self):
@@ -123,7 +123,7 @@ class TradingEngine:
         try:
             while self.running:
                 await self._run_cycle()
-                await asyncio.sleep(60)  # Main loop interval
+                await asyncio.sleep(30)  # Main loop interval
                 
         except asyncio.CancelledError:
             logger.info("Engine cancelled")
