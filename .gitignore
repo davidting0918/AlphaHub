@@ -6,12 +6,20 @@ __pycache__/
 *.log
 .env*
 
-# Output directories (keep options_backtest output)
+# Output directories (allow project report images)
 output/
 !projects/options_backtest/output/
+!projects/funding_rate_arb/output/
+!projects/funding_rate_arb/output/all/
+!projects/momentum_scanner/output/
+!projects/momentum_perp/backtest/
+!projects/momentum_perp/backtest/results/
 
-# Images (except tracked outputs)
+# Images (allow report PNGs in project outputs)
 *.png
 !projects/options_backtest/output/*.png
+!projects/funding_rate_arb/output/all/*.png
+!projects/momentum_scanner/output/*.png
+!projects/momentum_perp/backtest/results/*.png
 *.jpg
 *.jpeg
