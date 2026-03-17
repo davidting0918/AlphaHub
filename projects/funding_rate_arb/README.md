@@ -29,74 +29,69 @@ This project provides three tools to evaluate these opportunities:
 2. Short perp on exchange where you collect (higher funding rate)
 3. Capture the spread between the two exchanges
 
-## Modules
+## Backtest Results
 
-### `screener.py` — Opportunity Scanner
+### Overview Dashboard
 
-Screens all active perpetual instruments for funding rate profitability.
+![Overview Dashboard](output/all/overview.png)
+
+### Equity Curves — Top 10 Instruments
+
+![Equity Curves](output/all/equity_curves.png)
+
+### PnL Breakdown — Funding Revenue vs Fees
+
+![PnL Breakdown](output/all/pnl_breakdown.png)
+
+## Key Findings
+
+Backtested across **627 instruments** on Binance Futures and OKX (Sep 2025 – Mar 2026):
+
+| Metric | Value |
+|--------|-------|
+| Total instruments tested | 627 |
+| Profitable (net positive) | 31 (4.9%) |
+| Top APR | 148.8% (BULLA/USDT on Binance) |
+| 2nd best | 84.9% (CL/USDT on OKX) |
+| 3rd best | 48.8% (GUA/USDT on Binance) |
+| BTC APR | 1.97% (low but consistent, 77% win rate) |
+| ETH APR | 0.96% (73.5% positive funding rate) |
+
+### Conclusions
+
+1. **Most instruments are not profitable after fees.** Only ~5% of 627 instruments generated positive net returns. The 0.1% spot + 0.05% perp taker fees + 0.02% slippage per side eat into thin funding margins.
+
+2. **High-APR opportunities exist in new/meme tokens** (BULLA 148%, GUA 48%, BROCCOLIF3B 34%) but come with:
+   - Short data history (11-12 days only)
+   - High basis risk (price swings up to 67%)
+   - Low liquidity / high slippage risk
+
+3. **Blue-chip funding arb (BTC, ETH) is low-yield but safe.** BTC at ~2% APR and ETH at ~1% APR are barely worth the capital lockup and execution risk in the current market.
+
+4. **Fee optimization is critical.** Switching to maker orders (0.02% vs 0.1%) would dramatically improve profitability — many instruments near breakeven would flip positive.
+
+5. **Best practical approach:** Focus on mid-cap tokens with consistently positive funding (>0.03% avg per settlement), reasonable liquidity, and at least 30+ days of history for statistical significance.
+
+## Usage
 
 ```bash
+# Screen all instruments
 python3 -m projects.funding_rate_arb.screener
-```
 
-**Output:**
-- Ranked list of instruments by net APR (after fees)
-- Positive funding opportunities (long spot + short perp)
-- Negative funding opportunities (short spot + long perp)
-- Cross-exchange comparison for pairs listed on both OKX and Binance
-- Summary statistics per exchange
-
-**Key metrics:** Gross APR, Net APR, Sharpe ratio, positive funding %, recent trend, max drawdown.
-
-### `analyzer.py` — Cross-Exchange Spread Analysis
-
-Finds pairs where funding rates diverge between OKX and Binance.
-
-```bash
+# Cross-exchange analysis
 python3 -m projects.funding_rate_arb.analyzer
-```
 
-**Output:**
-- Spread statistics for all overlapping pairs
-- Current live opportunities above the minimum threshold
-- Direction recommendation (which exchange to long/short)
-
-### `backtester.py` — Historical Simulation
-
-Runs a full backtest of the spot-perp strategy using historical funding rate and kline data.
-
-```bash
-# Backtest all instruments across all exchanges
+# Full backtest (all exchanges)
 python3 -m projects.funding_rate_arb.backtester
 
-# Filter by exchange
+# Single exchange
 python3 -m projects.funding_rate_arb.backtester --exchange OKX
-python3 -m projects.funding_rate_arb.backtester --exchange BINANCEFUTURES
 
-# Backtest a single symbol
+# Single symbol
 python3 -m projects.funding_rate_arb.backtester --exchange BINANCEFUTURES --symbol BTCUSDT
 ```
 
-**Simulation details:**
-- Initial capital: $10,000 per position
-- Leverage: 1× (no leverage)
-- Entry: buy spot + short perp at first available candle
-- Settlement: collect/pay funding every 8 hours
-- Exit: close both legs at last available candle
-- Fees: 0.1% spot taker + 0.05% perp taker + 0.02% slippage per side
-
-**Output files** (saved to `output/<exchange>/`):
-| File | Description |
-|------|-------------|
-| `backtest_<ts>.csv` | Full results table for all instruments |
-| `backtest_<ts>.json` | Detailed results with equity curves (top 30) |
-| `overview_<ts>.png` | Dashboard: APR distribution, top-20 bars, Sharpe vs APR scatter, win rate plot |
-| `equity_curves_<ts>.png` | Equity curves for the top 10 most profitable instruments |
-| `pnl_breakdown_<ts>.png` | Funding revenue vs fees for top 20 instruments |
-
-### `config.py` — Strategy Parameters
-
-Central configuration for the cross-exchange analyzer:
+## Configuration
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -105,37 +100,12 @@ Central configuration for the cross-exchange analyzer:
 | `FEE_RATE_A` (OKX) | 0.05% | OKX taker fee |
 | `FEE_RATE_B` (Binance) | 0.04% | Binance taker fee |
 | `SLIPPAGE_PER_SIDE` | 0.02% | Estimated slippage |
-| `TOP_N` | 20 | Number of results to display |
-
-## Requirements
-
-- Python 3.10+
-- PostgreSQL database with populated `instruments`, `funding_rates`, and `klines` tables
-- Dependencies: `pandas`, `numpy`, `matplotlib`, `asyncpg`
-
-## Data Pipeline
-
-This project depends on the AlphaHub pipeline for data collection:
-
-1. **Instruments** — `instrument_job` fetches and stores all active perp contracts
-2. **Funding Rates** — `funding_rate_job` collects historical + live funding rate data
-3. **Klines** — `kline_job` fetches OHLCV candle data for price tracking
-
-All data is stored in PostgreSQL via the `database.client.PostgresClient`.
-
-## Example Results
-
-From a backtest across all exchanges (Binance + OKX):
-
-- **Profitable instruments:** 25+ with positive net PnL after fees
-- **Top APR:** 100%+ annualized on select altcoins (BULLA, CL, GUA)
-- **Typical range:** 10–50% APR for consistently positive funding pairs
-- **Key insight:** Fees are the main drag — instruments need >0.03% avg funding rate per settlement to be profitable after costs
+| Initial capital | $10,000 | Per position |
 
 ## Limitations
 
-- **Backtest ≠ live trading:** Assumes perfect execution, no liquidation risk, no funding rate prediction
-- **Basis risk:** Spot-perp price divergence is assumed to be zero (simplified)
+- **Backtest ≠ live trading:** Assumes perfect execution, no liquidation risk
+- **Basis risk:** Spot-perp price divergence is simplified
 - **Liquidity:** No position sizing based on order book depth
-- **Data period:** Results are limited to the historical data available in the database
-- **Market impact:** Not modeled — large positions will affect funding rates
+- **Market impact:** Not modeled — large positions affect funding rates
+- **Survivorship bias:** Only currently listed instruments are tested
