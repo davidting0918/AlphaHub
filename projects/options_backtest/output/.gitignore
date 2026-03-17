@@ -1,0 +1,10 @@
+# Ignore timestamped output files (regenerated each run)
+*_20*.png
+*_20*.csv
+
+# Keep latest outputs
+!equity_curves.png
+!strategy_comparison.png
+!iv_rv_spread.png
+!pnl_breakdown.png
+!volatility_surface.png
